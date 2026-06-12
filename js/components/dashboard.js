@@ -73,9 +73,10 @@ class Dashboard {
       this.chart.draw();
 
       // Restore meta fields
-      const metaFields = ['supervisor','adviser','manager','timer','counter','performer','age','label','counted'];
+      const metaFields = ['supervisor','adviser','manager','timer','counter','performer','age','label','counted','startDate'];
       metaFields.forEach(key => {
-        const input = document.getElementById(`meta-${key}`);
+        const inputId = 'meta-' + key.toLowerCase().replace('startdate', 'startdate');
+        const input = document.getElementById(inputId) || document.getElementById('meta-' + key);
         if (input) {
           input.value = (meta && meta[key]) ? meta[key] : '';
           this.chart.setMeta(key, input.value);

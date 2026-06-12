@@ -14,7 +14,8 @@ class SCCChart {
     this.meta = {
       supervisor: '', adviser: '', manager: '',
       timer: '', counter: '', performer: '',
-      age: '', label: '', counted: ''
+      age: '', label: '', counted: '',
+      startDate: ''
     };
 
     // Canvas internal resolution — wide enough for fan to breathe
@@ -169,13 +170,28 @@ class SCCChart {
       ctx.beginPath(); ctx.moveTo(x, this.PT - 32); ctx.lineTo(x, this.PT - 24); ctx.stroke();
     }
 
-    // "Dy Mo Yr" date fields — below week numbers, above chart
+    // Date fields — show calculated dd mm yy if startDate is set, else placeholder
     ctx.font = '7px Arial,sans-serif';
+    const startDate = this.meta.startDate ? new Date(this.meta.startDate) : null;
     [0, 28, 56, 84, 112, 140].forEach(d => {
       const x   = this.xL(d);
       const mid = x + this.dayW * 3.5;
       ctx.textAlign = 'center';
-      ctx.fillText('Dy Mo Yr', mid, this.PT - 14);
+      if (startDate && !isNaN(startDate)) {
+        const dt = new Date(startDate);
+        dt.setDate(dt.getDate() + d);
+        const dd = String(dt.getDate()).padStart(2, '0');
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        const yy = String(dt.getFullYear()).slice(-2);
+        ctx.fillStyle = '#003344';
+        ctx.font = 'bold 7px Arial,sans-serif';
+        ctx.fillText(dd + ' ' + mm + ' ' + yy, mid, this.PT - 14);
+        ctx.font = '7px Arial,sans-serif';
+        ctx.fillStyle = this.C_TEXT;
+      } else {
+        ctx.fillStyle = this.C_TEXT;
+        ctx.fillText('Dy Mo Yr', mid, this.PT - 14);
+      }
       ctx.strokeStyle = this.C_TEXT; ctx.lineWidth = 0.6;
       ctx.beginPath(); ctx.moveTo(x, this.PT - 18); ctx.lineTo(x + this.dayW * 7, this.PT - 18); ctx.stroke();
     });

@@ -323,3 +323,15 @@ body {
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
+
+/* ── Day 1 date field highlight ── */
+.field-group--highlight label {
+  color: #005580;
+  font-size: 11px;
+}
+.field-group--highlight input {
+  border-color: #005580;
+  border-width: 1.5px;
+  background: #f0faff;
+  font-weight: bold;
+}
