@@ -1,13 +1,100 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Behavioral Performance Dashboard</title>
-  <link rel="stylesheet" href="css/main.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team ABA — Behavioral Performance Dashboard</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/scc.css">
 </head>
 <body>
-  <div id="app"></div>
-  <script src="js/main.js"></script>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">Team ABA</div>
+        <div class="sidebar-subtitle">Performance Dashboard</div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section-label">Domains</div>
+        <a class="nav-item active" data-domain="movement" href="#">
+          <span class="nav-icon">⬡</span> Movement Fluency
+        </a>
+        <a class="nav-item" data-domain="physical" href="#">
+          <span class="nav-icon">⬡</span> Physical Load
+        </a>
+        <a class="nav-item" data-domain="decision" href="#">
+          <span class="nav-icon">⬡</span> Decision Fluency
+        </a>
+        <a class="nav-item" data-domain="emotional" href="#">
+          <span class="nav-icon">⬡</span> Emotional Performance
+        </a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="topbar-eyebrow">Standard Celeration Chart</div>
+          <div class="topbar-title" id="domain-title">Movement Fluency</div>
+        </div>
+        <div class="topbar-right">
+          <span class="badge">Daily view</span>
+          <button class="btn-outline" id="btn-export">Export CSV</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="chart-section">
+          <div class="chart-wrap" id="chart-wrap">
+            <canvas id="scc-canvas"></canvas>
+            <div class="scc-tooltip" id="scc-tooltip"></div>
+          </div>
+        </section>
+
+        <section class="log-section">
+          <h2 class="section-title">Log Entry</h2>
+          <div class="log-grid">
+            <div class="field-group">
+              <label for="entry-type">Type</label>
+              <select id="entry-type">
+                <option value="dot">● Correct response (dot)</option>
+                <option value="x">× Error / deceleration (×)</option>
+                <option value="phase">| Phase change line</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="entry-day">Day (0–140)</label>
+              <input type="number" id="entry-day" min="0" max="140" placeholder="e.g. 5">
+            </div>
+            <div class="field-group">
+              <label for="entry-val">Count per minute</label>
+              <input type="number" id="entry-val" min="0" step="any" placeholder="e.g. 4.5">
+            </div>
+            <div class="field-group">
+              <label for="entry-note">Note / label</label>
+              <input type="text" id="entry-note" placeholder="e.g. Added phone reminder">
+            </div>
+          </div>
+          <div class="log-actions">
+            <button class="btn-primary" id="btn-add">Add to chart</button>
+            <button class="btn-outline" id="btn-undo">Undo last</button>
+            <button class="btn-outline" id="btn-clear">Clear all</button>
+            <span class="log-feedback" id="log-feedback"></span>
+          </div>
+        </section>
+
+        <section class="entries-section">
+          <h2 class="section-title">Logged Entries</h2>
+          <div id="entries-list">
+            <div class="no-entries">No entries yet.</div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/components/scc.js"></script>
+  <script src="js/components/dashboard.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
