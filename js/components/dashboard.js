@@ -1,25 +1,31 @@
 /**
  * dashboard.js — Team ABA Dashboard
  * Manages domain switching, log entry panel, and entries list.
- * Depends on SCCChart (scc.js).
+ * Depends on SCCChart (scc.js) and DB (db.js).
  */
 
 class Dashboard {
   constructor() {
     this.domains = {
-      movement:  { name: 'Movement Fluency',      points: [] },
-      physical:  { name: 'Physical Load',          points: [] },
-      decision:  { name: 'Decision Fluency',        points: [] },
-      emotional: { name: 'Emotional Performance',  points: [] }
+      movement:  'Movement Fluency',
+      physical:  'Physical Load',
+      decision:  'Decision Fluency',
+      emotional: 'Emotional Performance'
     };
     this.currentDomain = 'movement';
+
+    // Debounce timer for meta field saves
+    this._metaTimer = null;
 
     this.chart = new SCCChart('scc-canvas', 'scc-tooltip');
 
     this._bindNav();
+    this._bindMetaFields();
     this._bindLogPanel();
     this._bindExport();
-    this._renderEntries();
+
+    // Load initial domain
+    this._loadDomain('movement');
   }
 
   // ── Domain switching ─────────────────────────────────────────────────────
@@ -28,100 +34,197 @@ class Dashboard {
     document.querySelectorAll('.nav-item[data-domain]').forEach(el => {
       el.addEventListener('click', e => {
         e.preventDefault();
-        this._switchDomain(el.dataset.domain);
+        if (el.dataset.domain !== this.currentDomain) {
+          this._loadDomain(el.dataset.domain);
+        }
       });
     });
   }
 
-  _switchDomain(key) {
-    // Save current points
-    this.domains[this.currentDomain].points = this.chart.getPoints();
+  async _loadDomain(slug) {
+    this._setLoading(true);
+    this.currentDomain = slug;
 
-    // Switch
-    this.currentDomain = key;
-    const domain = this.domains[key];
-
-    // Update nav active state
+    // Update nav
     document.querySelectorAll('.nav-item[data-domain]').forEach(el => {
-      el.classList.toggle('active', el.dataset.domain === key);
+      el.classList.toggle('active', el.dataset.domain === slug);
     });
 
     // Update title
-    document.getElementById('domain-title').textContent = domain.name;
+    document.getElementById('domain-title').textContent = this.domains[slug];
 
-    // Restore points for this domain
-    this.chart.points = [...domain.points];
-    this.chart.draw();
+    try {
+      // Load points and meta in parallel
+      const [points, meta] = await Promise.all([
+        DB.points.get(slug),
+        DB.meta.get(slug)
+      ]);
 
-    this._renderEntries();
+      // Restore chart points
+      this.chart.points = (points || []).map(p => ({
+        id:   p.id,
+        type: p.type,
+        day:  p.day,
+        val:  p.val,
+        note: p.note,
+        px:   p.type === 'phase' ? this.chart.xL(p.day) + this.chart.dayW * 0.5 : this.chart.xP(p.day),
+        py:   p.type === 'phase' ? null : this.chart.yP(p.val)
+      }));
+      this.chart.draw();
+
+      // Restore meta fields
+      const metaFields = ['supervisor','adviser','manager','timer','counter','performer','age','label','counted'];
+      metaFields.forEach(key => {
+        const input = document.getElementById(`meta-${key}`);
+        if (input) {
+          input.value = (meta && meta[key]) ? meta[key] : '';
+          this.chart.setMeta(key, input.value);
+        }
+      });
+
+      this._renderEntries();
+    } catch (err) {
+      this._showFeedback('Error loading data: ' + err.message, true);
+      console.error(err);
+    } finally {
+      this._setLoading(false);
+    }
   }
 
-  // ── Log panel ────────────────────────────────────────────────────────────
+  // ── Chart metadata ────────────────────────────────────────────────────────
+
+  _bindMetaFields() {
+    document.querySelectorAll('[data-meta]').forEach(input => {
+      input.addEventListener('input', () => {
+        // Update canvas immediately
+        this.chart.setMeta(input.dataset.meta, input.value.trim());
+        // Debounce DB save — wait 800ms after last keystroke
+        clearTimeout(this._metaTimer);
+        this._metaTimer = setTimeout(() => this._saveMeta(), 800);
+      });
+    });
+  }
+
+  async _saveMeta() {
+    const fields = {};
+    document.querySelectorAll('[data-meta]').forEach(input => {
+      fields[input.dataset.meta] = input.value.trim();
+    });
+    try {
+      await DB.meta.upsert(this.currentDomain, fields);
+    } catch (err) {
+      console.error('Meta save failed:', err);
+    }
+  }
+
+  // ── Log panel ─────────────────────────────────────────────────────────────
 
   _bindLogPanel() {
     document.getElementById('btn-add').addEventListener('click', () => this._addEntry());
     document.getElementById('btn-undo').addEventListener('click', () => this._undo());
     document.getElementById('btn-clear').addEventListener('click', () => this._clearAll());
 
-    // Allow Enter key to submit
     ['entry-day','entry-val','entry-note'].forEach(id => {
       document.getElementById(id).addEventListener('keydown', e => {
         if (e.key === 'Enter') this._addEntry();
       });
     });
+
+    // Hide count field when type is phase
+    document.getElementById('entry-type').addEventListener('change', e => {
+      const isPhase = e.target.value === 'phase';
+      document.getElementById('entry-val').closest('.field-group').style.opacity = isPhase ? '0.4' : '1';
+      document.getElementById('entry-val').disabled = isPhase;
+    });
   }
 
-  _addEntry() {
-    const type  = document.getElementById('entry-type').value;
-    const day   = parseInt(document.getElementById('entry-day').value);
+  async _addEntry() {
+    const type   = document.getElementById('entry-type').value;
+    const day    = parseInt(document.getElementById('entry-day').value);
     const valRaw = document.getElementById('entry-val').value;
-    const note  = document.getElementById('entry-note').value.trim();
-    const fb    = document.getElementById('log-feedback');
+    const note   = document.getElementById('entry-note').value.trim();
 
     if (isNaN(day) || day < 0 || day > 140) {
-      fb.textContent = 'Day must be 0–140.'; return;
+      this._showFeedback('Day must be 0–140.', true); return;
     }
     if (type !== 'phase' && (!valRaw || isNaN(parseFloat(valRaw)) || parseFloat(valRaw) <= 0)) {
-      fb.textContent = 'Enter a valid count per minute.'; return;
+      this._showFeedback('Enter a valid count per minute.', true); return;
     }
-    fb.textContent = '';
 
     const val = type === 'phase' ? null : parseFloat(valRaw);
-    this.chart.addPoint({ type, day, val, note });
 
-    // Clear inputs
-    document.getElementById('entry-day').value  = '';
-    document.getElementById('entry-val').value  = '';
-    document.getElementById('entry-note').value = '';
+    this._setLoading(true);
+    try {
+      const saved = await DB.points.add({
+        domain_slug: this.currentDomain,
+        type, day, val, note
+      });
 
-    this._renderEntries();
-    fb.textContent = 'Added.';
-    setTimeout(() => fb.textContent = '', 1800);
+      // Add to chart with the DB-assigned id
+      this.chart.points.push({
+        id:   saved.id,
+        type, day, val, note,
+        px: type === 'phase' ? this.chart.xL(day) + this.chart.dayW * 0.5 : this.chart.xP(day),
+        py: type === 'phase' ? null : this.chart.yP(val)
+      });
+      this.chart.draw();
+
+      document.getElementById('entry-day').value  = '';
+      document.getElementById('entry-val').value  = '';
+      document.getElementById('entry-note').value = '';
+
+      this._renderEntries();
+      this._showFeedback('Added.');
+    } catch (err) {
+      this._showFeedback('Save failed: ' + err.message, true);
+      console.error(err);
+    } finally {
+      this._setLoading(false);
+    }
   }
 
-  _undo() {
-    this.chart.undoLast();
-    this._renderEntries();
+  async _undo() {
+    const pts = this.chart.getPoints();
+    if (!pts.length) return;
+    const last = pts[pts.length - 1];
+    this._setLoading(true);
+    try {
+      if (last.id) await DB.points.delete(last.id);
+      this.chart.undoLast();
+      this._renderEntries();
+    } catch (err) {
+      this._showFeedback('Undo failed: ' + err.message, true);
+    } finally {
+      this._setLoading(false);
+    }
   }
 
-  _clearAll() {
+  async _clearAll() {
     if (!confirm('Clear all data for this domain?')) return;
-    this.chart.clearPoints();
-    this._renderEntries();
+    this._setLoading(true);
+    try {
+      await DB.points.clear(this.currentDomain);
+      this.chart.clearPoints();
+      this._renderEntries();
+    } catch (err) {
+      this._showFeedback('Clear failed: ' + err.message, true);
+    } finally {
+      this._setLoading(false);
+    }
   }
 
-  // ── Entries list ─────────────────────────────────────────────────────────
+  // ── Entries list ──────────────────────────────────────────────────────────
 
   _renderEntries() {
-    const el   = document.getElementById('entries-list');
-    const pts  = this.chart.getPoints();
+    const el  = document.getElementById('entries-list');
+    const pts = this.chart.getPoints();
 
     if (!pts.length) {
       el.innerHTML = '<div class="no-entries">No entries yet.</div>';
       return;
     }
 
-    const dispVal = v => {
+    const fmt = v => {
       if (v == null) return '—';
       return v >= 100 ? Math.round(v).toString()
            : v >= 10  ? v.toFixed(1)
@@ -133,21 +236,19 @@ class Dashboard {
     el.innerHTML = [...pts].reverse().map((p, ri) => {
       const i = pts.length - 1 - ri;
       let icon, info;
-
       if (p.type === 'dot') {
         icon = '<span class="entry-icon-dot"></span>';
-        info = `<span class="entry-val">Day ${p.day} &middot; ${dispVal(p.val)}/min</span>` +
-               (p.note ? ` <span class="entry-note">— ${p.note}</span>` : '');
+        info = `<span class="entry-val">Day ${p.day} &middot; ${fmt(p.val)}/min</span>`
+             + (p.note ? ` <span class="entry-note">— ${p.note}</span>` : '');
       } else if (p.type === 'x') {
         icon = '<span class="entry-icon-x">&times;</span>';
-        info = `<span class="entry-val">Day ${p.day} &middot; ${dispVal(p.val)}/min</span>` +
-               (p.note ? ` <span class="entry-note">— ${p.note}</span>` : '');
+        info = `<span class="entry-val">Day ${p.day} &middot; ${fmt(p.val)}/min</span>`
+             + (p.note ? ` <span class="entry-note">— ${p.note}</span>` : '');
       } else {
         icon = '<span class="entry-icon-phase"></span>';
-        info = `<span class="entry-val">Phase change &middot; Day ${p.day}</span>` +
-               (p.note ? ` <span class="entry-note">— ${p.note}</span>` : '');
+        info = `<span class="entry-val">Phase change &middot; Day ${p.day}</span>`
+             + (p.note ? ` <span class="entry-note">— ${p.note}</span>` : '');
       }
-
       return `<div class="entry-row">
         ${icon}
         <span class="entry-info">${info}</span>
@@ -156,16 +257,41 @@ class Dashboard {
     }).join('');
   }
 
-  deleteEntry(index) {
-    this.chart.removePoint(index);
-    this._renderEntries();
+  async deleteEntry(index) {
+    const pts  = this.chart.getPoints();
+    const point = pts[index];
+    this._setLoading(true);
+    try {
+      if (point.id) await DB.points.delete(point.id);
+      this.chart.removePoint(index);
+      this._renderEntries();
+    } catch (err) {
+      this._showFeedback('Delete failed: ' + err.message, true);
+    } finally {
+      this._setLoading(false);
+    }
   }
 
-  // ── Export ───────────────────────────────────────────────────────────────
+  // ── Export ────────────────────────────────────────────────────────────────
 
   _bindExport() {
     document.getElementById('btn-export').addEventListener('click', () => {
-      this.chart.exportCSV(this.domains[this.currentDomain].name);
+      this.chart.exportCSV(this.domains[this.currentDomain]);
     });
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────────────────
+
+  _setLoading(on) {
+    document.getElementById('btn-add').disabled = on;
+    document.body.style.cursor = on ? 'wait' : '';
+  }
+
+  _showFeedback(msg, isError = false) {
+    const el = document.getElementById('log-feedback');
+    el.textContent = msg;
+    el.style.color = isError ? '#cc3333' : '#0099cc';
+    clearTimeout(this._fbTimer);
+    this._fbTimer = setTimeout(() => el.textContent = '', 2500);
   }
 }

@@ -286,3 +286,40 @@ body {
   font-family: Arial, sans-serif;
 }
 .entry-del:hover { color: #cc3333; }
+
+/* ── Sidebar prominence ── */
+.sidebar-logo {
+  font-size: 22px;
+  font-weight: bold;
+  color: #003344;
+  letter-spacing: -0.02em;
+}
+.sidebar-tagline {
+  font-size: 11px;
+  color: #0099cc;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-top: 3px;
+}
+.nav-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #0099cc;
+  flex-shrink: 0;
+  opacity: 0.4;
+}
+.nav-item.active .nav-dot { opacity: 1; }
+
+/* ── Meta / chart info section ── */
+.meta-section {
+  background: #fff;
+  border: 1px solid #d0e8f0;
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
