@@ -121,7 +121,6 @@ class SCCChart {
     this._drawYLabels();
     this._drawXLabels();
     this._drawAxisTitles();
-    this._drawCelerationFan();
     this._drawFooterOnCanvas();
   }
 
@@ -214,39 +213,6 @@ class SCCChart {
     ctx.fillText('CALENDAR WEEKS', this.PL + this.cW / 2, this.PT - 52);
   }
 
-  _drawCelerationFan() {
-    const { ctx } = this;
-
-    // Fan origin: above the chart, left of the grid — matches original SCC layout
-    const fx = this.PL - 72;
-    const fy = this.PT - 42;
-
-    const lines = [
-      { l: '×16',  a: -58 },
-      { l: '×4',   a: -46 },
-      { l: '×2',   a: -36 },
-      { l: '×1.4', a: -27 },
-      { l: '×1.0', a: -18 }
-    ];
-    const len = 48;
-
-    lines.forEach(({ l, a }) => {
-      const rad = a * Math.PI / 180;
-      const ex  = fx + Math.cos(rad) * len;
-      const ey  = fy + Math.sin(rad) * len;
-      ctx.strokeStyle = this.C_TEXT; ctx.lineWidth = 0.8;
-      ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(ex, ey); ctx.stroke();
-      ctx.fillStyle = this.C_TEXT; ctx.font = '7px Arial,sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(l, ex + 2, ey + 3);
-    });
-
-    ctx.fillStyle = this.C_TEXT; ctx.font = 'bold 7px Arial,sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText('TM', fx + 2, fy - 5);
-    ctx.font = '6.5px Arial,sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('per week', fx, fy + 16);
-  }
 
   // Footer values drawn on canvas from this.meta
   _drawFooterOnCanvas() {
