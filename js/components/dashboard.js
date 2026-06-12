@@ -67,7 +67,7 @@ class Dashboard {
         day:  p.day,
         val:  p.val,
         note: p.note,
-        px:   p.type === 'phase' ? this.chart.xL(p.day) + this.chart.dayW * 0.5 : this.chart.xP(p.day),
+        px:   p.type === 'phase' ? this.chart.xL(p.day) : this.chart.xP(p.day),
         py:   p.type === 'phase' ? null : this.chart.yP(p.val)
       }));
       this.chart.draw();

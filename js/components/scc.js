@@ -301,7 +301,7 @@ class SCCChart {
   // ── Public API ───────────────────────────────────────────────────────────
 
   addPoint({ type, day, val, note = '' }) {
-    const px = type === 'phase' ? this.xL(day) + this.dayW * 0.5 : this.xP(day);
+    const px = type === 'phase' ? this.xL(day) : this.xP(day);
     const py = type === 'phase' ? null : this.yP(val);
     this.points.push({ type, day, val, note, px, py });
     this.draw();
