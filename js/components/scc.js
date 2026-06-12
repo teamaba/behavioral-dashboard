@@ -179,14 +179,6 @@ class SCCChart {
       ctx.strokeStyle = this.C_TEXT; ctx.lineWidth = 0.6;
       ctx.beginPath(); ctx.moveTo(x, this.PT - 18); ctx.lineTo(x + this.dayW * 7, this.PT - 18); ctx.stroke();
     });
-
-    // Day letters on first week only — positioned below Dy Mo Yr underline
-    const dl = ['Su','Mo','Tu','We','Th','Fr','Sa'];
-    ctx.font = '7px Arial,sans-serif';
-    for (let d = 0; d < 7; d++) {
-      ctx.textAlign = 'center';
-      ctx.fillText(dl[d], this.xL(d) + this.dayW * 0.5, this.PT - 6);
-    }
   }
 
   _drawAxisTitles() {
