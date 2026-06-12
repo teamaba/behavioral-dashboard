@@ -184,13 +184,13 @@ class SCCChart {
         const mm = String(dt.getMonth() + 1).padStart(2, '0');
         const yy = String(dt.getFullYear()).slice(-2);
         ctx.fillStyle = '#003344';
-        ctx.font = 'bold 7px Arial,sans-serif';
-        ctx.fillText(dd + ' ' + mm + ' ' + yy, mid, this.PT - 14);
-        ctx.font = '7px Arial,sans-serif';
+        ctx.font = 'bold 10px Arial,sans-serif';
+        ctx.fillText(dd + ' ' + mm + ' ' + yy, mid, this.PT - 22);
         ctx.fillStyle = this.C_TEXT;
       } else {
         ctx.fillStyle = this.C_TEXT;
-        ctx.fillText('Dy Mo Yr', mid, this.PT - 14);
+        ctx.font = '9px Arial,sans-serif';
+        ctx.fillText('Dy Mo Yr', mid, this.PT - 22);
       }
       ctx.strokeStyle = this.C_TEXT; ctx.lineWidth = 0.6;
       ctx.beginPath(); ctx.moveTo(x, this.PT - 18); ctx.lineTo(x + this.dayW * 7, this.PT - 18); ctx.stroke();
