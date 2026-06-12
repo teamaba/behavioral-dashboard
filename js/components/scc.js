@@ -18,14 +18,14 @@ class SCCChart {
     };
 
     // Canvas internal resolution — wide enough for fan to breathe
-    this.W = 960;
+    this.W = 1010;
     this.H = 630;
     this.canvas.width = this.W;
     this.canvas.height = this.H;
 
     // Chart padding — extra left room for fan, extra top for header
     this.PL = 78;
-    this.PR = 22;
+    this.PR = 60;
     this.PT = 88;
     this.PB = 58;
 
@@ -218,8 +218,8 @@ class SCCChart {
     const { ctx } = this;
 
     // Fan origin: above the chart, left of the grid — matches original SCC layout
-    const fx = this.PL - 52;
-    const fy = this.PT - 8;
+    const fx = this.PL - 72;
+    const fy = this.PT - 42;
 
     const lines = [
       { l: '×16',  a: -58 },
@@ -276,10 +276,7 @@ class SCCChart {
       ctx.beginPath(); ctx.moveTo(x + 2, yUnderline); ctx.lineTo(x + fw - 4, yUnderline); ctx.stroke();
     });
 
-    ctx.fillStyle = this.C_TEXT;
-    ctx.font = '7px Arial,sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('DAILY per minute CHART', this.PL, this.PT + this.cH + 56);
+
   }
 
   // ── Data points ──────────────────────────────────────────────────────────
