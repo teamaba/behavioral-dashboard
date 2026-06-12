@@ -19,14 +19,14 @@ class SCCChart {
 
     // Canvas internal resolution — wide enough for fan to breathe
     this.W = 960;
-    this.H = 600;
+    this.H = 630;
     this.canvas.width = this.W;
     this.canvas.height = this.H;
 
     // Chart padding — extra left room for fan, extra top for header
     this.PL = 78;
     this.PR = 22;
-    this.PT = 80;
+    this.PT = 88;
     this.PB = 58;
 
     this.cW = this.W - this.PL - this.PR;
@@ -181,12 +181,12 @@ class SCCChart {
       ctx.beginPath(); ctx.moveTo(x, this.PT - 18); ctx.lineTo(x + this.dayW * 7, this.PT - 18); ctx.stroke();
     });
 
-    // Day letters on first week only
-    const dl = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    // Day letters on first week only — positioned below Dy Mo Yr underline
+    const dl = ['Su','Mo','Tu','We','Th','Fr','Sa'];
     ctx.font = '7px Arial,sans-serif';
     for (let d = 0; d < 7; d++) {
       ctx.textAlign = 'center';
-      ctx.fillText(dl[d], this.xP(d), this.PT - 21);
+      ctx.fillText(dl[d], this.xL(d) + this.dayW * 0.5, this.PT - 6);
     }
   }
 
@@ -217,19 +217,18 @@ class SCCChart {
   _drawCelerationFan() {
     const { ctx } = this;
 
-    // Fan origin: tucked into top-left corner INSIDE chart area
-    // so it never overlaps the date fields above the chart
-    const fx = this.PL + 6;
-    const fy = this.PT + 12;
+    // Fan origin: above the chart, left of the grid — matches original SCC layout
+    const fx = this.PL - 52;
+    const fy = this.PT - 8;
 
     const lines = [
-      { l: '×16',  a: 28 },
-      { l: '×4',   a: 40 },
-      { l: '×2',   a: 50 },
-      { l: '×1.4', a: 58 },
-      { l: '×1.0', a: 66 }
+      { l: '×16',  a: -58 },
+      { l: '×4',   a: -46 },
+      { l: '×2',   a: -36 },
+      { l: '×1.4', a: -27 },
+      { l: '×1.0', a: -18 }
     ];
-    const len = 44;
+    const len = 48;
 
     lines.forEach(({ l, a }) => {
       const rad = a * Math.PI / 180;
@@ -238,14 +237,15 @@ class SCCChart {
       ctx.strokeStyle = this.C_TEXT; ctx.lineWidth = 0.8;
       ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(ex, ey); ctx.stroke();
       ctx.fillStyle = this.C_TEXT; ctx.font = '7px Arial,sans-serif';
-      ctx.textAlign = a < 50 ? 'left' : 'left';
+      ctx.textAlign = 'left';
       ctx.fillText(l, ex + 2, ey + 3);
     });
 
     ctx.fillStyle = this.C_TEXT; ctx.font = 'bold 7px Arial,sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText('TM', fx + 2, fy - 4);
+    ctx.fillText('TM', fx + 2, fy - 5);
     ctx.font = '6.5px Arial,sans-serif';
-    ctx.fillText('per week', fx, fy + len + 12);
+    ctx.textAlign = 'center';
+    ctx.fillText('per week', fx, fy + 16);
   }
 
   // Footer values drawn on canvas from this.meta
@@ -254,30 +254,32 @@ class SCCChart {
     const fields = ['supervisor','adviser','manager','timer','counter','performer','age','label','counted'];
     const labels = ['SUPERVISOR','ADVISER','MANAGER','TIMER','COUNTER','PERFORMER','AGE','LABEL','COUNTED'];
     const fw = this.cW / fields.length;
-    const y0 = this.PT + this.cH + 42;
+    const yLabel    = this.PT + this.cH + 40; // field name label
+    const yValue    = this.PT + this.cH + 52; // autofill / typed value
+    const yUnderline = this.PT + this.cH + 55; // underline below value
 
     fields.forEach((key, i) => {
       const x = this.PL + i * fw;
-      // Field label
+      // Field label (small, above the line)
       ctx.fillStyle = this.C_TEXT;
       ctx.font = '7px Arial,sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText(labels[i], x + 2, y0);
-      // Underline
-      ctx.strokeStyle = this.C_TEXT; ctx.lineWidth = 0.5;
-      ctx.beginPath(); ctx.moveTo(x + 2, y0 + 4); ctx.lineTo(x + fw - 4, y0 + 4); ctx.stroke();
-      // Value typed by user
+      ctx.fillText(labels[i], x + 2, yLabel);
+      // Typed value (larger, between label and underline)
       if (this.meta[key]) {
         ctx.fillStyle = '#003344';
-        ctx.font = '8px Arial,sans-serif';
-        ctx.fillText(this.meta[key], x + 2, y0 + 3);
+        ctx.font = '9px Arial,sans-serif';
+        ctx.fillText(this.meta[key], x + 2, yValue);
       }
+      // Underline
+      ctx.strokeStyle = this.C_TEXT; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(x + 2, yUnderline); ctx.lineTo(x + fw - 4, yUnderline); ctx.stroke();
     });
 
     ctx.fillStyle = this.C_TEXT;
     ctx.font = '7px Arial,sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('DAILY per minute CHART', this.PL, this.PT + this.cH + 54);
+    ctx.fillText('DAILY per minute CHART', this.PL, this.PT + this.cH + 56);
   }
 
   // ── Data points ──────────────────────────────────────────────────────────
