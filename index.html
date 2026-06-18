@@ -6,14 +6,19 @@
   <title>Team ABA — Behavioral Performance Dashboard</title>
   <link rel="stylesheet" href="css/main.css">
   <link rel="stylesheet" href="css/scc.css">
+  <link rel="stylesheet" href="css/login.css">
 </head>
 <body>
-  <div class="app">
+  <div id="login-overlay" class="hidden"></div>
+  <div id="invite-overlay" class="hidden"></div>
+
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+  <div class="app" id="app-root" style="display:none;">
 
     <aside class="sidebar">
       <div class="sidebar-header">
-        <div class="sidebar-logo">Team ABA</div>
-        <div class="sidebar-tagline">Behavioral Performance</div>
+        <img src="img/logo.png" alt="Team ABA" class="sidebar-logo-img">
       </div>
       <nav class="sidebar-nav">
         <div class="nav-section-label">Domains</div>
@@ -35,21 +40,105 @@
     <main class="main">
       <header class="topbar">
         <div class="topbar-left">
-          <div class="topbar-eyebrow">Standard Celeration Chart</div>
-          <div class="topbar-title" id="domain-title">Movement Fluency</div>
+          <button class="hamburger" id="btn-hamburger" aria-label="Open menu">&#9776;</button>
+          <div>
+            <div class="topbar-eyebrow">Standard Celeration Chart</div>
+            <div class="topbar-title" id="domain-title">Movement Fluency</div>
+          </div>
         </div>
         <div class="topbar-right">
+          <span class="user-badge" id="user-badge"></span>
           <button class="btn-outline" id="btn-export">Export CSV</button>
         </div>
       </header>
 
       <div class="content">
 
+        <!-- Log entry (top) -->
+        <section class="log-section">
+          <h2 class="section-title">Log entry</h2>
+          <div class="log-grid">
+            <div class="field-group">
+              <label for="entry-type">Type</label>
+              <select id="entry-type">
+                <option value="dot">● Correct response (dot)</option>
+                <option value="x">× Error / deceleration (×)</option>
+                <option value="phase">| Phase change (solid line)</option>
+                <option value="intervention">¦ Intervention (dashed line)</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="entry-date">Date</label>
+              <input type="date" id="entry-date">
+            </div>
+            <div class="field-group">
+              <label for="entry-events">Events</label>
+              <input type="number" id="entry-events" min="1" step="1" placeholder="e.g. 15">
+            </div>
+            <div class="field-group">
+              <label for="entry-floor">Floor (m:ss or h:mm:ss)</label>
+              <input type="text" id="entry-floor" placeholder="e.g. 0:30">
+            </div>
+          </div>
+          <div class="field-group log-grid-note">
+            <label for="entry-note">Note / label</label>
+            <input type="text" id="entry-note" placeholder="e.g. Added phone reminder">
+          </div>
+          <div class="log-grid aim-grid">
+            <div class="field-group">
+              <label for="aim-low">Aim low (rate/min)</label>
+              <input type="number" id="aim-low" min="0" step="any" placeholder="e.g. 80">
+            </div>
+            <div class="field-group">
+              <label for="aim-high">Aim high (rate/min)</label>
+              <input type="number" id="aim-high" min="0" step="any" placeholder="e.g. 120">
+            </div>
+          </div>
+          <div class="log-actions">
+            <button class="btn-primary" id="btn-add">Add to chart</button>
+            <button class="btn-outline hidden" id="btn-cancel-edit">Cancel edit</button>
+            <button class="btn-outline" id="btn-undo">Undo last</button>
+            <button class="btn-outline" id="btn-clear">Clear all</button>
+            <button class="btn-outline" id="btn-demo" style="color:#6a3d9a;border-color:#6a3d9a;">Load demo</button>
+            <span class="log-feedback" id="log-feedback"></span>
+          </div>
+        </section>
+
+        <!-- Chart type selector -->
+        <section class="chart-type-section">
+          <label for="chart-type" class="chart-type-label">Chart type</label>
+          <select id="chart-type" class="chart-type-select">
+            <option value="timings">Timings</option>
+            <option value="daily" selected>Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+
+          <div id="aggregation-control" class="aggregation-control hidden">
+            <label for="aggregation-method" class="chart-type-label">Aggregation</label>
+            <select id="aggregation-method" class="chart-type-select">
+              <option value="geomean" selected>Geometric Mean</option>
+              <option value="median">Median</option>
+              <option value="average">Average</option>
+            </select>
+          </div>
+        </section>
+
         <!-- Chart -->
         <section class="chart-section">
+          <div class="chart-header">
+            <div class="chart-controls">
+              <button class="btn-chart-scroll" id="btn-scroll-left" title="Scroll back">&#8592;</button>
+              <button class="btn-chart-scroll" id="btn-scroll-home" title="Reset to start">&#8635;</button>
+              <button class="btn-chart-scroll" id="btn-scroll-right" title="Scroll forward">&#8594;</button>
+            </div>
+            <div id="legend-box" class="legend-box"></div>
+            <div id="slope-box" class="slope-box"></div>
+          </div>
           <div class="chart-wrap" id="chart-wrap">
             <canvas id="scc-canvas"></canvas>
             <div class="scc-tooltip" id="scc-tooltip"></div>
+            <div class="note-popup hidden" id="note-popup"></div>
           </div>
         </section>
 
@@ -59,77 +148,52 @@
           <div class="meta-grid">
             <div class="field-group field-group--highlight">
               <label for="meta-startdate">Day 0 date</label>
-              <input type="date" id="meta-startdate" data-meta="startDate" title="Set the date of Day 1 — all other dates calculate automatically">
+              <input type="date" id="meta-startdate" data-meta="startDate" title="Set the date of Day 0 — all other dates calculate automatically">
+            </div>
+            <div class="field-group">
+              <label for="meta-organization">Organization</label>
+              <input type="text" id="meta-organization" data-meta="organization" placeholder="">
             </div>
             <div class="field-group">
               <label for="meta-supervisor">Supervisor</label>
-              <input type="text" id="meta-supervisor" data-meta="supervisor" placeholder="e.g. J. Rivera, BCBA">
-            </div>
-            <div class="field-group">
-              <label for="meta-adviser">Adviser</label>
-              <input type="text" id="meta-adviser" data-meta="adviser" placeholder="">
-            </div>
-            <div class="field-group">
-              <label for="meta-manager">Manager</label>
-              <input type="text" id="meta-manager" data-meta="manager" placeholder="">
-            </div>
-            <div class="field-group">
-              <label for="meta-timer">Timer</label>
-              <input type="text" id="meta-timer" data-meta="timer" placeholder="">
+              <input type="text" id="meta-supervisor" data-meta="supervisor" placeholder="">
             </div>
             <div class="field-group">
               <label for="meta-counter">Counter</label>
               <input type="text" id="meta-counter" data-meta="counter" placeholder="">
             </div>
             <div class="field-group">
-              <label for="meta-performer">Performer</label>
-              <input type="text" id="meta-performer" data-meta="performer" placeholder="e.g. Sam">
+              <label for="meta-charter">Charter</label>
+              <input type="text" id="meta-charter" data-meta="charter" placeholder="">
             </div>
             <div class="field-group">
-              <label for="meta-age">Age</label>
-              <input type="text" id="meta-age" data-meta="age" placeholder="">
+              <label for="meta-environment">Environment</label>
+              <input type="text" id="meta-environment" data-meta="environment" placeholder="">
             </div>
             <div class="field-group">
-              <label for="meta-label">Label</label>
-              <input type="text" id="meta-label" data-meta="label" placeholder="">
+              <label for="meta-timer">Timer</label>
+              <input type="text" id="meta-timer" data-meta="timer" placeholder="">
             </div>
             <div class="field-group">
-              <label for="meta-counted">Counted</label>
-              <input type="text" id="meta-counted" data-meta="counted" placeholder="">
-            </div>
-          </div>
-        </section>
-
-        <!-- Log entry -->
-        <section class="log-section">
-          <h2 class="section-title">Log entry</h2>
-          <div class="log-grid">
-            <div class="field-group">
-              <label for="entry-type">Type</label>
-              <select id="entry-type">
-                <option value="dot">● Correct response (dot)</option>
-                <option value="x">× Error / deceleration (×)</option>
-                <option value="phase">| Phase change line</option>
-              </select>
+              <label for="meta-correct">Correct responses label</label>
+              <input type="text" id="meta-correct" data-meta="correct" placeholder="e.g. Words read correctly">
             </div>
             <div class="field-group">
-              <label for="entry-day">Day (0–140)</label>
-              <input type="number" id="entry-day" min="0" max="140" placeholder="e.g. 5">
+              <label for="meta-incorrect">Incorrect responses label</label>
+              <input type="text" id="meta-incorrect" data-meta="incorrect" placeholder="e.g. Errors">
             </div>
             <div class="field-group">
-              <label for="entry-val">Count per minute</label>
-              <input type="number" id="entry-val" min="0" step="any" placeholder="e.g. 4.5">
+              <label for="meta-neutral">Neutral label</label>
+              <input type="text" id="meta-neutral" data-meta="neutral" placeholder="e.g. Prompted">
             </div>
             <div class="field-group">
-              <label for="entry-note">Note / label</label>
-              <input type="text" id="entry-note" placeholder="e.g. Added phone reminder">
+              <label for="meta-acceltarget">Acceleration target (×/wk)</label>
+              <input type="number" id="meta-acceltarget" data-meta="acceltarget" min="1" step="0.01" placeholder="e.g. 1.25">
             </div>
-          </div>
-          <div class="log-actions">
-            <button class="btn-primary" id="btn-add">Add to chart</button>
-            <button class="btn-outline" id="btn-undo">Undo last</button>
-            <button class="btn-outline" id="btn-clear">Clear all</button>
-            <span class="log-feedback" id="log-feedback"></span>
+            <div class="field-group">
+              <label for="meta-deceltarget">Deceleration target (÷/wk)</label>
+              <input type="number" id="meta-deceltarget" data-meta="deceltarget" min="1" step="0.01" placeholder="e.g. 1.25">
+            </div>
           </div>
         </section>
 
@@ -146,6 +210,8 @@
   </div>
 
   <script src="js/db.js"></script>
+  <script src="js/components/login.js"></script>
+  <script src="js/components/invite.js"></script>
   <script src="js/components/scc.js"></script>
   <script src="js/components/dashboard.js"></script>
   <script src="js/app.js"></script>

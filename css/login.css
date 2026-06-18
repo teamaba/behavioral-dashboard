@@ -1,0 +1,268 @@
+/* ── Login overlay ── */
+#login-overlay {
+  position: fixed;
+  inset: 0;
+  background: #f0f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  font-family: Arial, sans-serif;
+}
+
+#login-overlay.hidden { display: none; }
+
+.login-card {
+  background: #fff;
+  border: 1px solid #d0e8f0;
+  border-radius: 8px;
+  padding: 32px 30px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 2px 16px rgba(0,80,120,0.08);
+}
+
+.login-logo-img {
+  display: block;
+  width: 220px;
+  height: auto;
+  margin: 0 auto 20px;
+}
+
+.login-tagline {
+  font-size: 11px;
+  color: #0099cc;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  text-align: center;
+  margin-top: 3px;
+  margin-bottom: 24px;
+}
+
+.login-mode-label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #003344;
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.login-field label {
+  font-size: 10px;
+  font-weight: bold;
+  color: #0099cc;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.login-field input {
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid #0099cc;
+  border-radius: 4px;
+  color: #003344;
+  background: #f7fdff;
+  font-family: Arial, sans-serif;
+  outline: none;
+}
+.login-field input:focus { border-color: #007faa; background: #fff; }
+
+.login-btn {
+  width: 100%;
+  font-size: 13px;
+  font-weight: bold;
+  padding: 9px 0;
+  background: #0099cc;
+  color: #fff;
+  border: 1px solid #0099cc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  margin-top: 6px;
+}
+.login-btn:hover { background: #007faa; }
+.login-btn:disabled { opacity: 0.6; cursor: wait; }
+
+.login-links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14px;
+  font-size: 11px;
+}
+
+.login-links a {
+  color: #0099cc;
+  text-decoration: none;
+  cursor: pointer;
+}
+.login-links a:hover { text-decoration: underline; }
+
+.login-feedback {
+  font-size: 11px;
+  margin-top: 12px;
+  text-align: center;
+  min-height: 14px;
+}
+.login-feedback.error   { color: #cc3333; }
+.login-feedback.success { color: #1a8a4a; }
+
+/* ── Logged-in topbar user badge ── */
+.user-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #336677;
+}
+.user-badge .role-tag {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #d0f0fa;
+  color: #005580;
+  text-transform: uppercase;
+}
+.user-badge button {
+  font-size: 11px;
+  color: #0099cc;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: Arial, sans-serif;
+}
+
+/* ── Invite modal overlay ── */
+#invite-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 51, 68, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+#invite-overlay.hidden { display: none; }
+
+.invite-card {
+  position: relative;
+  max-width: 460px;
+}
+
+/* ── User management list ── */
+.manage-section-label {
+  font-size: 10px;
+  font-weight: bold;
+  color: #0099cc;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.users-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #d0e8f0;
+  border-radius: 4px;
+}
+
+.users-empty {
+  padding: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: #99c8d8;
+}
+
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #e8f4f8;
+}
+.user-row:last-child { border-bottom: none; }
+
+.user-info {
+  flex: 1;
+  min-width: 0;
+}
+.user-email {
+  font-size: 12px;
+  color: #003344;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-client-name {
+  font-size: 10px;
+  color: #99c8d8;
+  margin-top: 1px;
+}
+.user-self {
+  font-size: 10px;
+  color: #99c8d8;
+}
+
+.user-role-select {
+  font-size: 11px;
+  padding: 4px 6px;
+  border: 1px solid #d0e8f0;
+  border-radius: 3px;
+  color: #003344;
+  background: #f7fdff;
+  font-family: Arial, sans-serif;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.user-role-select:focus { border-color: #0099cc; }
+
+.user-del-btn {
+  font-size: 11px;
+  font-weight: bold;
+  color: #cc3333;
+  background: none;
+  border: 1px solid #e8c0c0;
+  border-radius: 3px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  flex-shrink: 0;
+}
+.user-del-btn:hover { background: #ffeaea; border-color: #cc3333; }
+
+.invite-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: none;
+  border: none;
+  font-size: 15px;
+  color: #336677;
+  cursor: pointer;
+  line-height: 1;
+  font-family: Arial, sans-serif;
+}
+.invite-close:hover { color: #003344; }
+
+.invite-select {
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid #0099cc;
+  border-radius: 4px;
+  color: #003344;
+  background: #f7fdff;
+  font-family: Arial, sans-serif;
+  outline: none;
+  width: 100%;
+}
+.invite-select:focus { border-color: #007faa; background: #fff; }
