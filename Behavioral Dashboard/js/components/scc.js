@@ -16,10 +16,12 @@ class SCCChart {
     this.chartType   = 'daily';
     this.aggregation = 'geomean';
     this.viewStart   = 0;
-    this._plottableCache = null;
-    this._timingGroups   = [];
-    this._noteCarets     = [];
-    this.aimLow          = null;
+    this._plottableCache      = null;
+    this._timingGroups        = [];
+    this._noteCarets          = [];
+    this._timingRegressions   = [];
+    this._celerationLineHits  = [];
+    this.aimLow               = null;
     this.aimHigh         = null;
 
     this.meta = {
@@ -27,7 +29,9 @@ class SCCChart {
       charter: '', environment: '', timer: '',
       correct: '', incorrect: '', neutral: '',
       acceltarget: '', deceltarget: '',
-      startDate: ''
+      startDate: '', goal: '',
+      dotColor: '#009933', dotShape: 'circle',
+      xColor:   '#cc0000', xShape:   'x'
     };
 
     this.W = 1010;
@@ -62,19 +66,21 @@ class SCCChart {
   // ── Type configuration ────────────────────────────────────────────────────
 
   _TYPE_CONFIG = {
-    'timings': { PT: 110 },
-    'daily':   { PT: 88  },
-    'weekly':  { PT: 88  },
-    'monthly': { PT: 110 },
+    'timings':       { PT: 110 },
+    'daily':         { PT: 88  },
+    'weekly':        { PT: 88  },
+    'monthly':       { PT: 110 },
+    'count_per_day': { PT: 88  },
   };
 
   _cfg() { return this._TYPE_CONFIG[this.chartType] || this._TYPE_CONFIG['daily']; }
 
   _applyTypeConfig() {
     this.PT        = this._cfg().PT;
-    this.LOG_MIN   = -3;
-    this.LOG_MAX   = 3;
-    this.LOG_RANGE = 6;
+    const cpd      = this.chartType === 'count_per_day';
+    this.LOG_MIN   = cpd ? 0  : -3;
+    this.LOG_MAX   = cpd ? 6  :  3;
+    this.LOG_RANGE = this.LOG_MAX - this.LOG_MIN;
     this.cW   = this.W - this.PL - this.PR;
     this.cH   = this.H - this.PT - this.PB;
     this.dayW = this.cW / this.DAYS;
@@ -140,7 +146,7 @@ class SCCChart {
   // ── Scroll API ────────────────────────────────────────────────────────────
 
   _scrollStep() {
-    return { timings: 20, daily: 14, weekly: 10, monthly: 12 }[this.chartType] || 14;
+    return { timings: 20, daily: 14, weekly: 10, monthly: 12, count_per_day: 14 }[this.chartType] || 14;
   }
 
   scrollBy(delta) { this.viewStart += delta; this.draw(); }
@@ -216,8 +222,35 @@ class SCCChart {
             ...p,
             col: p.day,
             px:  this._isLineType(p.type) ? this.colL(p.day) : this.colC(p.day),
-            py:  this._isLineType(p.type) ? null : this.yP(p.val),
+            py:  this._isLineType(p.type) ? null
+                 : (p.val === 0 && p.floor > 0 ? this.yP(0.5 * 60 / p.floor) : this.yP(p.val)),
           }));
+      }
+
+      // ── Count per day ────────────────────────────────────────────────────
+      case 'count_per_day': {
+        const dotTotals = {}, xTotals = {};
+        const result = [];
+        [...raw].sort((a, b) => a.day - b.day).forEach(p => {
+          if (this._isLineType(p.type)) {
+            result.push({ ...p, col: p.day, px: this.colL(p.day), py: null });
+          } else if (p.type === 'dot') {
+            dotTotals[p.day] = (dotTotals[p.day] || 0) + (p.val || 0);
+          } else if (p.type === 'x') {
+            xTotals[p.day] = (xTotals[p.day] || 0) + (p.val || 0);
+          }
+        });
+        Object.entries(dotTotals).forEach(([day, v]) => {
+          const d = Number(day);
+          if (v <= 0) return;
+          result.push({ type: 'dot', col: d, day: d, val: v, note: '', px: this.colC(d), py: this.yP(v) });
+        });
+        Object.entries(xTotals).forEach(([day, v]) => {
+          const d = Number(day);
+          if (v <= 0) return;
+          result.push({ type: 'x', col: d, day: d, val: v, note: '', px: this.colC(d), py: this.yP(v) });
+        });
+        return result.sort((a, b) => a.col !== b.col ? a.col - b.col : (this._isLineType(a.type) ? -1 : 1));
       }
 
       // ── Weekly ───────────────────────────────────────────────────────────
@@ -326,7 +359,7 @@ class SCCChart {
             const idx = dayMsmt.get(p.day) ?? 0;
             dayMsmt.set(p.day, idx + 1);
             const c = sc + idx;
-            result.push({ ...p, col: c, px: this.colC(c), py: this.yP(p.val) });
+            result.push({ ...p, col: c, px: this.colC(c), py: p.val === 0 && p.floor > 0 ? this.yP(0.5 * 60 / p.floor) : this.yP(p.val) });
           }
         }
 
@@ -356,9 +389,7 @@ class SCCChart {
   }
 
   _computeRegressions() {
-    const pts    = this._getPlottablePoints().filter(p => !this._isLineType(p.type) && p.val > 0);
-    const dotPts = pts.filter(p => p.type === 'dot').map(p => ({ x: p.col, y: Math.log10(p.val) }));
-    const xPts   = pts.filter(p => p.type === 'x'  ).map(p => ({ x: p.col, y: Math.log10(p.val) }));
+    const pts = this._getPlottablePoints().filter(p => !this._isLineType(p.type) && p.val > 0);
 
     const withRange = (reg, pairs) => {
       if (reg.m !== null && pairs.length >= 2) {
@@ -372,6 +403,25 @@ class SCCChart {
       return reg;
     };
 
+    if (this.chartType === 'timings') {
+      this._timingRegressions = this._timingGroups.map(g => {
+        const dayPts   = pts.filter(p => p.day === g.day);
+        const dotPairs = dayPts.filter(p => p.type === 'dot').map(p => ({ x: p.col, y: Math.log10(p.val) }));
+        const xPairs   = dayPts.filter(p => p.type === 'x'  ).map(p => ({ x: p.col, y: Math.log10(p.val) }));
+        return {
+          day:      g.day,
+          startCol: g.startCol,
+          endCol:   g.endCol,
+          dot:      withRange(this._leastSquares(dotPairs), dotPairs),
+          x:        withRange(this._leastSquares(xPairs),   xPairs),
+        };
+      });
+      return { dot: { m: null }, x: { m: null } };
+    }
+
+    const dotPts = pts.filter(p => p.type === 'dot').map(p => ({ x: p.col, y: Math.log10(p.val) }));
+    const xPts   = pts.filter(p => p.type === 'x'  ).map(p => ({ x: p.col, y: Math.log10(p.val) }));
+
     return {
       dot: withRange(this._leastSquares(dotPts), dotPts),
       x:   withRange(this._leastSquares(xPts),   xPts),
@@ -380,13 +430,13 @@ class SCCChart {
 
   _drawRegressionLines(regressions) {
     const { ctx } = this;
+    this._celerationLineHits = [];
 
     const drawLine = (reg, color) => {
-      if (!reg || reg.m === null) return;
+      if (!reg || reg.m === null || reg.minCol == null) return;
       const { m, b, minCol, maxCol } = reg;
       const py1 = this.yP(Math.pow(10, m * minCol + b));
       const py2 = this.yP(Math.pow(10, m * maxCol + b));
-
       ctx.save();
       ctx.beginPath(); ctx.rect(this.PL, this.PT, this.cW, this.cH); ctx.clip();
       ctx.strokeStyle = color; ctx.lineWidth = 2.2;
@@ -396,6 +446,17 @@ class SCCChart {
       ctx.stroke();
       ctx.restore();
     };
+
+    if (this.chartType === 'timings') {
+      for (const tr of this._timingRegressions) {
+        drawLine(tr.dot, this.C_REG_DOT);
+        drawLine(tr.x,   this.C_REG_X);
+        if (tr.dot.m !== null || tr.x.m !== null) {
+          this._celerationLineHits.push(tr);
+        }
+      }
+      return;
+    }
 
     drawLine(regressions.dot, this.C_REG_DOT);
     drawLine(regressions.x,   this.C_REG_X);
@@ -407,9 +468,11 @@ class SCCChart {
     const box = document.getElementById('slope-box');
     if (!box) return;
 
+    if (this.chartType === 'timings') { box.innerHTML = ''; return; }
+
     // Express slope as a celeration factor per natural unit for the chart type
-    const perUnit   = { daily: 7, weekly: 1, monthly: 1, timings: 1 }[this.chartType] || 1;
-    const unitLabel = { daily: '/wk', weekly: '/wk', monthly: '/mo', timings: '/pt' }[this.chartType] || '/wk';
+    const perUnit   = { daily: 7, weekly: 1, monthly: 1, count_per_day: 7 }[this.chartType] || 1;
+    const unitLabel = { daily: '/wk', weekly: '/wk', monthly: '/mo', count_per_day: '/wk' }[this.chartType] || '/wk';
 
     const fmtFactor = reg => {
       if (!reg || reg.m === null) return '—';
@@ -464,6 +527,8 @@ class SCCChart {
     this._plottableCache = null;
     this._timingGroups   = [];
     this._noteCarets     = [];
+    this.C_REG_DOT = this.meta.dotColor || '#009933';
+    this.C_REG_X   = this.meta.xColor   || '#cc0000';
     this._drawGrid();
     this._drawRightAxis();
     this._drawAimBand();
@@ -474,6 +539,37 @@ class SCCChart {
     this._updateSlopeBox(reg);
     this._drawNoteCarets();
     this._updateLegend();
+    this.afterDraw?.();
+  }
+
+  getStats() {
+    const pts    = this._getPlottablePoints().filter(p => !this._isLineType(p.type) && p.val > 0);
+    const dotPts = pts.filter(p => p.type === 'dot');
+    const xPts   = pts.filter(p => p.type === 'x');
+
+    const regAndStats = typePts => {
+      if (typePts.length < 2) return { cel: null, bounce: null };
+      const pairs = typePts.map(p => ({ x: p.col, y: Math.log10(p.val) }));
+      const reg   = this._leastSquares(pairs);
+      if (reg.m === null) return { cel: null, bounce: null };
+      const perUnit = { daily: 7, weekly: 1, monthly: 1, timings: 1, count_per_day: 7 }[this.chartType] || 7;
+      const residuals = pairs.map(p => Math.abs(p.y - (reg.m * p.x + reg.b)));
+      return { cel: Math.pow(10, reg.m * perUnit), bounce: Math.pow(10, Math.max(...residuals)) };
+    };
+
+    const sorted = [...dotPts].sort((a, b) => b.col - a.col).slice(0, 7);
+    const level  = sorted.length
+      ? Math.pow(10, sorted.reduce((s, p) => s + Math.log10(p.val), 0) / sorted.length)
+      : null;
+
+    const { cel: dotCel, bounce: dotBounce } = regAndStats(dotPts);
+    const tgt      = parseFloat(this.meta.acceltarget);
+    const impIndex = dotCel && !isNaN(tgt) && tgt > 0 ? dotCel / tgt : null;
+
+    const phases    = this.points.filter(p => this._isLineType(p.type)).sort((a, b) => b.day - a.day);
+    const condition = phases.length ? (phases[0].note || null) : null;
+
+    return { level, dotCeleration: dotCel, dotBounce, impIndex, condition };
   }
 
   // ── Fluency aim band ─────────────────────────────────────────────────────
@@ -538,6 +634,7 @@ class SCCChart {
   // ── Right Y-axis (Counting Times) ────────────────────────────────────────
 
   _drawRightAxis() {
+    if (this.chartType === 'count_per_day') return;
     const { ctx } = this;
     const x = this.PL + this.cW + 6;
 
@@ -577,6 +674,7 @@ class SCCChart {
   // ── Floor ticks ───────────────────────────────────────────────────────────
 
   _drawFloorTicks() {
+    if (this.chartType === 'count_per_day') return;
     const pts = this._getPlottablePoints().filter(p => p.floor && p.floor > 0 && !this._isLineType(p.type));
     if (!pts.length) return;
     const { ctx } = this;
@@ -645,6 +743,33 @@ class SCCChart {
   // ── Y-axis ────────────────────────────────────────────────────────────────
 
   _renderYAxis() {
+    if (this.chartType === 'count_per_day') {
+      this._drawYLabelSet([
+        [1000000, '1,000,000', true],
+        [500000,  '500,000',   false],
+        [100000,  '100,000',   true],
+        [50000,   '50,000',    false],
+        [10000,   '10,000',    true],
+        [5000,    '5,000',     false],
+        [1000,    '1,000',     true],
+        [500,     '500',       false],
+        [100,     '100',       true],
+        [50,      '50',        false],
+        [10,      '10',        true],
+        [5,       '5',         false],
+        [1,       '1',         true],
+      ]);
+      const { ctx } = this;
+      const y = this.PT + this.cH;
+      ctx.fillStyle = this.C_TEXT;
+      ctx.font = 'bold 11px Arial,sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('0', this.PL - 4, y + 14);
+      ctx.strokeStyle = this.C_CYCLE; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(this.PL - 4, y); ctx.lineTo(this.PL, y); ctx.stroke();
+      this._drawYTitle('COUNT PER DAY');
+      return;
+    }
     this._drawYLabelSet([
       [1000,'1000',true],[500,'500',false],[200,'200',false],
       [100,'100',true],[50,'50',false],[20,'20',false],
@@ -692,10 +817,11 @@ class SCCChart {
     ctx.beginPath();
     ctx.rect(this.PL, 0, this.cW, this.H);
     ctx.clip();
-    ({ timings: () => this._renderXAxis_timings(),
-       daily:   () => this._renderXAxis_daily(),
-       weekly:  () => this._renderXAxis_weekly(),
-       monthly: () => this._renderXAxis_monthly(),
+    ({ timings:       () => this._renderXAxis_timings(),
+       daily:         () => this._renderXAxis_daily(),
+       weekly:        () => this._renderXAxis_weekly(),
+       monthly:       () => this._renderXAxis_monthly(),
+       count_per_day: () => this._renderXAxis_daily(),
     }[this.chartType] || (() => this._renderXAxis_daily()))();
     ctx.restore();
   }
@@ -908,13 +1034,17 @@ class SCCChart {
     if (!box) return;
     const correct   = this.meta.correct   || 'Correct';
     const incorrect = this.meta.incorrect || 'Error';
+    const dotSym = { circle: '●', square: '■', triangle: '▲', diamond: '◆' }[this.meta.dotShape || 'circle'] || '●';
+    const xSym   = { x: '×', plus: '+', dash: '—', opencircle: '○' }[this.meta.xShape || 'x'] || '×';
+    const dotColor = this.meta.dotColor || '#009933';
+    const xColor   = this.meta.xColor   || '#cc0000';
     const rows = [
-      { symbol: '●', label: correct },
-      { symbol: '×', label: incorrect },
+      { type: 'dot', symbol: dotSym, color: dotColor, label: correct },
+      { type: 'x',   symbol: xSym,   color: xColor,   label: incorrect },
     ];
-    if (this.meta.neutral) rows.push({ symbol: '—', label: this.meta.neutral });
+    if (this.meta.neutral) rows.push({ type: null, symbol: '—', color: '#666', label: this.meta.neutral });
     box.innerHTML = rows.map(r =>
-      `<span class="legend-item"><span class="legend-sym">${r.symbol}</span>${r.label}</span>`
+      `<span class="legend-item${r.type ? ' legend-item--editable' : ''}" ${r.type ? `data-type="${r.type}"` : ''}><span class="legend-sym" style="color:${r.color}">${r.symbol}</span>${r.label}</span>`
     ).join('');
   }
 
@@ -957,15 +1087,43 @@ class SCCChart {
           });
         }
       } else if (p.type === 'dot') {
-        ctx.fillStyle = '#111';
-        ctx.beginPath(); ctx.arc(p.px, p.py, 3, 0, Math.PI * 2); ctx.fill();
+        const color = this.meta.dotColor || '#009933';
+        const shape = this.meta.dotShape || 'circle';
+        const s = 4;
+        ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+        if (shape === 'square') {
+          ctx.fillRect(p.px - s + 1, p.py - s + 1, (s - 1) * 2, (s - 1) * 2);
+        } else {
+          ctx.beginPath();
+          if (shape === 'triangle') {
+            ctx.moveTo(p.px, p.py - s); ctx.lineTo(p.px + s, p.py + s); ctx.lineTo(p.px - s, p.py + s);
+          } else if (shape === 'diamond') {
+            ctx.moveTo(p.px, p.py - s); ctx.lineTo(p.px + s, p.py); ctx.lineTo(p.px, p.py + s); ctx.lineTo(p.px - s, p.py);
+          } else {
+            ctx.arc(p.px, p.py, s - 1, 0, Math.PI * 2);
+          }
+          ctx.closePath(); ctx.fill();
+        }
       } else if (p.type === 'x') {
+        const color = this.meta.xColor || '#cc0000';
+        const shape = this.meta.xShape || 'x';
         const s = 4.5;
-        ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(p.px - s, p.py - s); ctx.lineTo(p.px + s, p.py + s);
-        ctx.moveTo(p.px + s, p.py - s); ctx.lineTo(p.px - s, p.py + s);
-        ctx.stroke();
+        ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2; ctx.setLineDash([]);
+        if (shape === 'opencircle') {
+          ctx.beginPath(); ctx.arc(p.px, p.py, s - 1, 0, Math.PI * 2); ctx.stroke();
+        } else {
+          ctx.beginPath();
+          if (shape === 'plus') {
+            ctx.moveTo(p.px, p.py - s); ctx.lineTo(p.px, p.py + s);
+            ctx.moveTo(p.px - s, p.py); ctx.lineTo(p.px + s, p.py);
+          } else if (shape === 'dash') {
+            ctx.moveTo(p.px - s, p.py); ctx.lineTo(p.px + s, p.py);
+          } else {
+            ctx.moveTo(p.px - s, p.py - s); ctx.lineTo(p.px + s, p.py + s);
+            ctx.moveTo(p.px + s, p.py - s); ctx.lineTo(p.px - s, p.py + s);
+          }
+          ctx.stroke();
+        }
       }
     });
 
@@ -995,7 +1153,7 @@ class SCCChart {
   // ── Tooltip ───────────────────────────────────────────────────────────────
 
   _colLabel(pos) {
-    const prefix = { timings: 'Msmt', daily: 'Day', weekly: 'Week', monthly: 'Month' }[this.chartType] || 'Col';
+    const prefix = { timings: 'Msmt', daily: 'Day', weekly: 'Week', monthly: 'Month', count_per_day: 'Day' }[this.chartType] || 'Col';
     return `${prefix} ${pos}`;
   }
 
@@ -1004,7 +1162,8 @@ class SCCChart {
     if (!sd) return null;
     const fmt = dt => `${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')}/${String(dt.getFullYear()).slice(-2)}`;
     switch (this.chartType) {
-      case 'daily': {
+      case 'daily':
+      case 'count_per_day': {
         const dt = new Date(sd); dt.setDate(dt.getDate() + col);
         return fmt(dt);
       }
@@ -1022,7 +1181,7 @@ class SCCChart {
 
   _bindTooltip() {
     this.canvas.addEventListener('mousemove',  e => this._onMouseMove(e));
-    this.canvas.addEventListener('mouseleave', () => { this.tooltip.style.display = 'none'; });
+    this.canvas.addEventListener('mouseleave', () => { this.tooltip.style.display = 'none'; this.canvas.style.cursor = ''; });
     this.canvas.addEventListener('click',      e => this._onCanvasClick(e));
     document.addEventListener('click', e => {
       const popup = document.getElementById('note-popup');
@@ -1040,7 +1199,15 @@ class SCCChart {
     const cx = (e.clientX - rect.left) * scaleX;
     const cy = (e.clientY - rect.top)  * scaleY;
 
-    if (!this.inChart(cx, cy)) { this.tooltip.style.display = 'none'; return; }
+    if (!this.inChart(cx, cy)) { this.tooltip.style.display = 'none'; this.canvas.style.cursor = ''; return; }
+
+    if (this.chartType === 'timings') {
+      const hoverCol = Math.floor((cx - this.PL) / this.dayW) + this.viewStart;
+      const onLine   = this._celerationLineHits.some(tr => hoverCol >= tr.startCol && hoverCol <= tr.endCol);
+      this.canvas.style.cursor = onLine ? 'pointer' : '';
+    } else {
+      this.canvas.style.cursor = '';
+    }
 
     const col  = this.xToDay(cx);
     const fmt  = v => v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(3) : v.toFixed(4);
@@ -1051,8 +1218,12 @@ class SCCChart {
     );
 
     const dateStr = this._colToDateLabel(col);
-    this.tooltip.textContent = nearby
-      ? `${this._colLabel(nearby.day)} · ${fmt(nearby.val)}/min${nearby.note ? ' — ' + nearby.note : ''}`
+    const nearbyValLabel = nearby
+      ? (this.chartType === 'count_per_day' ? Math.round(nearby.val) : `${fmt(nearby.val)}/min`) +
+        (nearby.note ? ' — ' + nearby.note : '')
+      : null;
+    this.tooltip.textContent = nearbyValLabel !== null
+      ? `${this._colLabel(nearby.day)} · ${nearbyValLabel}`
       : dateStr
         ? `${this._colLabel(col)} · ${dateStr}`
         : this._colLabel(col);
@@ -1073,13 +1244,18 @@ class SCCChart {
         .map(p => ({ px: p.px, note: p.note, type: p.type, day: p.day, val: p.val }));
     }
 
-    // weekly/monthly: notes are stripped by aggregation — use raw points
+    // weekly/monthly/count_per_day: notes may be stripped by aggregation — use raw points
     return this.points
       .filter(p => !this._isLineType(p.type) && hasNote(p.note))
       .map(p => {
-        const px = this.chartType === 'weekly'
-          ? this.colC(Math.floor(p.day / 7))
-          : this.colC(this.monthToCol(this._monthOffsetOf(p.day)));
+        let px;
+        if (this.chartType === 'count_per_day') {
+          px = this.colC(p.day);
+        } else if (this.chartType === 'weekly') {
+          px = this.colC(Math.floor(p.day / 7));
+        } else {
+          px = this.colC(this.monthToCol(this._monthOffsetOf(p.day)));
+        }
         return { px, note: p.note, type: p.type, day: p.day, val: p.val };
       });
   }
@@ -1124,18 +1300,74 @@ class SCCChart {
     const cx = (e.clientX - rect.left) * scaleX;
     const cy = (e.clientY - rect.top)  * scaleY;
 
-    const hit = this._noteCarets.find(c =>
+    const caretHit = this._noteCarets.find(c =>
       Math.abs(cx - c.px) <= c.halfW + 4 && cy >= c.baseY - 4 && cy <= c.tipY + 4
     );
 
-    if (hit) {
+    if (caretHit) {
       e.stopPropagation();
-      const localX = e.clientX - rect.left;
-      const localY = e.clientY - rect.top;
-      this._showNotePopup(hit.pts, localX, localY);
-    } else {
-      this._hideNotePopup();
+      this._showNotePopup(caretHit.pts, e.clientX - rect.left, e.clientY - rect.top);
+      return;
     }
+
+    this._hideNotePopup();
+
+    if (this.chartType === 'timings' && this.inChart(cx, cy)) {
+      const clickCol = Math.floor((cx - this.PL) / this.dayW) + this.viewStart;
+      const lineHit  = this._celerationLineHits.find(tr => clickCol >= tr.startCol && clickCol <= tr.endCol);
+      if (lineHit) {
+        this._showTimingDayCeleration(lineHit);
+      } else {
+        document.getElementById('slope-box').innerHTML = '';
+      }
+    }
+  }
+
+  _showTimingDayCeleration(tr) {
+    const box = document.getElementById('slope-box');
+    if (!box) return;
+
+    const fmtFactor = reg => {
+      if (!reg || reg.m === null) return '—';
+      const factor = Math.pow(10, reg.m);
+      if (Math.abs(factor - 1) < 0.005) return '×1.00/pt';
+      if (factor > 1) return '×' + (factor >= 10 ? factor.toFixed(1) : factor.toFixed(2)) + '/pt';
+      const inv = 1 / factor;
+      return '÷' + (inv >= 10 ? inv.toFixed(1) : inv.toFixed(2)) + '/pt';
+    };
+
+    const fmtBounce = reg => {
+      if (!reg || reg.bounce == null) return '—';
+      const b = reg.bounce;
+      return '×' + (b >= 10 ? b.toFixed(1) : b.toFixed(2));
+    };
+
+    const sd = this._startDate();
+    let dateStr = `Day ${tr.day}`;
+    if (sd) {
+      const dt = new Date(sd);
+      dt.setDate(dt.getDate() + tr.day);
+      dateStr = `${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')}/${String(dt.getFullYear()).slice(-2)}`;
+    }
+
+    const item = (reg, label, color) => `
+      <div class="slope-item">
+        <span class="slope-label" style="color:${color}">${label}</span>
+        <div class="slope-row">
+          <span class="slope-sub-label">Celeration</span>
+          <span class="slope-val" style="color:${color}">${fmtFactor(reg)}</span>
+        </div>
+        <div class="slope-row">
+          <span class="slope-sub-label">Bounce</span>
+          <span class="slope-val" style="color:${color}">${fmtBounce(reg)}</span>
+        </div>
+        <span class="slope-n">${reg ? reg.n : 0} pt${reg && reg.n === 1 ? '' : 's'}</span>
+      </div>`;
+
+    box.innerHTML =
+      `<span class="slope-date-label">${dateStr}</span>` +
+      item(tr.dot, 'Successes', this.C_REG_DOT) +
+      item(tr.x,   'Errors',    this.C_REG_X);
   }
 
   _showNotePopup(pts, localX, localY) {
@@ -1156,7 +1388,7 @@ class SCCChart {
       <div class="note-popup-entry">
         <div class="note-popup-point">
           <span class="note-popup-icon note-popup-icon--${p.type}">${p.type === 'dot' ? '●' : '×'}</span>
-          <span>${p.type === 'dot' ? 'Correct' : 'Error'} &middot; ${dayLabel(p)} &middot; ${fmt(p.val)}/min</span>
+          <span>${p.type === 'dot' ? 'Correct' : 'Error'} &middot; ${dayLabel(p)} &middot; ${this.chartType === 'count_per_day' ? Math.round(p.val) : `${fmt(p.val)}/min`}</span>
         </div>
         <div class="note-popup-text">&ldquo;${p.note}&rdquo;</div>
       </div>`).join('');
@@ -1186,8 +1418,9 @@ class SCCChart {
   // ── CSV export ────────────────────────────────────────────────────────────
 
   exportCSV(domainName) {
-    const colHeader = { timings: 'Measurement', daily: 'Day', weekly: 'Week', monthly: 'Month' }[this.chartType] || 'Day';
-    const rows = [['Type', colHeader, 'Count/Min', 'Note']];
+    const colHeader = { timings: 'Measurement', daily: 'Day', weekly: 'Week', monthly: 'Month', count_per_day: 'Day' }[this.chartType] || 'Day';
+    const valHeader = this.chartType === 'count_per_day' ? 'Count' : 'Count/Min';
+    const rows = [['Type', colHeader, valHeader, 'Note']];
     [...this.points].sort((a, b) => a.day - b.day).forEach(p => {
       rows.push([p.type, p.day, p.val ?? '', p.note ?? '']);
     });

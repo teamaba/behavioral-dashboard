@@ -26,6 +26,93 @@
   line-height: 1;
 }
 
+.legend-item--editable {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  transition: background 0.12s;
+}
+.legend-item--editable:hover { background: rgba(0, 153, 204, 0.1); }
+
+/* ── Marker popup ── */
+.marker-popup {
+  position: fixed;
+  z-index: 200;
+  background: #fff;
+  border: 1px solid #d0e8f0;
+  border-radius: 7px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.14);
+  padding: 10px 12px 12px;
+  width: 190px;
+  font-family: Arial, sans-serif;
+}
+.marker-popup.hidden { display: none; }
+
+.marker-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 9px;
+}
+.marker-popup-title {
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #003344;
+}
+.marker-popup-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #99aabb;
+  font-size: 13px;
+  padding: 0;
+  line-height: 1;
+}
+.marker-popup-close:hover { color: #003344; }
+
+.marker-popup-label {
+  display: block;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #99aabb;
+  margin-bottom: 4px;
+}
+.marker-popup-color {
+  display: block;
+  width: 100%;
+  height: 30px;
+  border: 1px solid #d0e8f0;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px;
+  margin-bottom: 9px;
+  box-sizing: border-box;
+}
+.marker-shape-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.marker-shape-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  border: 1px solid #d0e8f0;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #fff;
+  font-size: 15px;
+  color: #003344;
+  transition: background 0.1s, border-color 0.1s;
+}
+.marker-shape-btn:hover { background: #f0f8ff; border-color: #0099cc; }
+.marker-shape-btn.active { background: #e0f4ff; border-color: #0099cc; }
+
 /* ── Chart section ── */
 .chart-section {
   background: #fff;

@@ -1,0 +1,7 @@
+# Sensitive / non-repo files — do not commit
+Payroll/
+Timesheets/
+*.pdf
+*.xlsx
+*.xls
+*.docx
