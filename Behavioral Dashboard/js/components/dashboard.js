@@ -12,18 +12,29 @@ class Dashboard {
       decision:  'Decision Fluency',
       emotional: 'Emotional Performance'
     };
-    this.currentDomain = 'movement';
-    this._domainAim    = {};
-    this._editingIndex = null;
+    this.currentDomain     = null;
+    this.currentBehaviorId = null;
+    this.currentDomainId   = null;
+    this._domainMap        = null;
+    this._domainAim        = {};
+    this._editingIndex     = null;
+    this._context          = null;
 
     // Debounce timer for meta field saves
     this._metaTimer = null;
 
     this.chart = new SCCChart('scc-canvas', 'scc-tooltip');
     this.isReadOnly = !DB.auth.isStaff();
+    this.isStaff    = DB.auth.isStaff();
 
-    this._bindNav();
+    this.goalsManager = new GoalsManager();
+    if (this.isStaff) {
+      document.getElementById('review-section').classList.remove('hidden');
+      this.chart.afterDraw = () => this._updateProgramReview();
+    }
+
     this._bindMetaFields();
+    this._bindMarkerPopup();
     this._bindLogPanel();
     this._bindChartType();
     this._bindAggregation();
@@ -31,9 +42,7 @@ class Dashboard {
     this._bindExport();
     this._bindDemo();
     this._applyAccessControl();
-
-    // Load initial domain
-    this._loadDomain('movement');
+    this._showBehaviorPrompt();
   }
 
   // ── Access control ───────────────────────────────────────────────────────
@@ -61,6 +70,13 @@ class Dashboard {
         const showAgg = type === 'weekly' || type === 'monthly';
         aggCtrl.classList.toggle('hidden', !showAgg);
       }
+      const floorGroup = document.getElementById('entry-floor')?.closest('.field-group');
+      if (floorGroup) floorGroup.style.display = type === 'count_per_day' ? 'none' : '';
+      const isCpd = type === 'count_per_day';
+      const aimLowLabel  = document.querySelector('label[for="aim-low"]');
+      const aimHighLabel = document.querySelector('label[for="aim-high"]');
+      if (aimLowLabel)  aimLowLabel.textContent  = isCpd ? 'Aim low (count/day)'  : 'Aim low (rate/min)';
+      if (aimHighLabel) aimHighLabel.textContent = isCpd ? 'Aim high (count/day)' : 'Aim high (rate/min)';
     };
 
     sel.addEventListener('change', update);
@@ -83,6 +99,8 @@ class Dashboard {
       const lo = parseFloat(lowEl.value);
       const hi = parseFloat(highEl.value);
       this.chart.setAimRange(isNaN(lo) ? null : lo, isNaN(hi) ? null : hi);
+      clearTimeout(this._metaTimer);
+      this._metaTimer = setTimeout(() => this._saveMeta(), 800);
     };
     lowEl.addEventListener('input', update);
     highEl.addEventListener('input', update);
@@ -90,52 +108,47 @@ class Dashboard {
 
   // ── Domain switching ─────────────────────────────────────────────────────
 
-  _bindNav() {
-    document.querySelectorAll('.nav-item[data-domain]').forEach(el => {
-      el.addEventListener('click', e => {
-        e.preventDefault();
-        if (el.dataset.domain !== this.currentDomain) {
-          this._loadDomain(el.dataset.domain);
-        }
-      });
-    });
-  }
+  // Called by NavTree when the user selects a domain item
+  async activate(behaviorId, domainSlug, context) {
+    // Hide prompt and show chart sections immediately (no async gap)
+    this._hideBehaviorPrompt();
+    this._setLoading(true);
 
-  async _loadDomain(slug) {
-    // Save aim values for the domain we're leaving
+    // Resolve domain IDs on first call (cached for session)
+    if (!this._domainMap) {
+      const domains = await DB.domains.getAll();
+      this._domainMap = {};
+      domains.forEach(d => { this._domainMap[d.slug] = d; });
+    }
+    const domain = this._domainMap[domainSlug];
+    if (!domain) { this._setLoading(false); return; }
+
     const aimLowEl  = document.getElementById('aim-low');
     const aimHighEl = document.getElementById('aim-high');
-    this._domainAim[this.currentDomain] = {
-      low:  aimLowEl  ? aimLowEl.value  : '',
-      high: aimHighEl ? aimHighEl.value : '',
-    };
 
-    this._setLoading(true);
-    this.currentDomain = slug;
+    this.currentBehaviorId = behaviorId;
+    this.currentDomainId   = domain.id;
+    this.currentDomain     = domainSlug;
+    this._context          = context;
 
-    // Update nav
-    document.querySelectorAll('.nav-item[data-domain]').forEach(el => {
-      el.classList.toggle('active', el.dataset.domain === slug);
-    });
-
-    // Update title
-    document.getElementById('domain-title').textContent = this.domains[slug];
+    // Update breadcrumb
+    const parts = [context.participantName, context.behaviorName, domain.name].filter(Boolean);
+    const titleEl = document.getElementById('domain-title');
+    if (titleEl) titleEl.textContent = parts.join(' › ');
 
     try {
-      // Load points and meta in parallel
       const [points, meta] = await Promise.all([
-        DB.points.get(slug),
-        DB.meta.get(slug)
+        DB.points.get(behaviorId, domain.id),
+        DB.meta.get(behaviorId, domain.id)
       ]);
 
-      // Restore aim values for this domain
-      const aim = this._domainAim[slug] || { low: '', high: '' };
-      if (aimLowEl)  aimLowEl.value  = aim.low;
-      if (aimHighEl) aimHighEl.value = aim.high;
-      const lo = parseFloat(aim.low);
-      const hi = parseFloat(aim.high);
-      this.chart.aimLow  = isNaN(lo) ? null : lo;
-      this.chart.aimHigh = isNaN(hi) ? null : hi;
+      // Restore aim values from DB
+      const aimLo = meta?.aim_low  != null ? parseFloat(meta.aim_low)  : NaN;
+      const aimHi = meta?.aim_high != null ? parseFloat(meta.aim_high) : NaN;
+      if (aimLowEl)  aimLowEl.value  = isNaN(aimLo) ? '' : aimLo;
+      if (aimHighEl) aimHighEl.value = isNaN(aimHi) ? '' : aimHi;
+      this.chart.aimLow  = isNaN(aimLo) ? null : aimLo;
+      this.chart.aimHigh = isNaN(aimHi) ? null : aimHi;
 
       // Restore chart points
       this.chart.points = (points || []).map(p => ({
@@ -151,16 +164,26 @@ class Dashboard {
       this.chart.draw();
 
       // Restore meta fields
-      const metaFields = ['startDate','organization','supervisor','counter','charter','environment','timer','correct','incorrect','neutral','acceltarget','deceltarget'];
+      const metaFields = ['startDate','organization','supervisor','counter','charter','environment','timer','correct','incorrect','neutral','acceltarget','deceltarget','goal','dotColor','dotShape','xColor','xShape'];
       metaFields.forEach(key => {
         const input = document.getElementById('meta-' + key.toLowerCase());
         if (input) {
-          input.value = (meta && meta[key] != null) ? meta[key] : '';
+          const saved = meta && meta[key] != null && meta[key] !== '' ? meta[key] : null;
+          input.value = saved ?? '';
           this.chart.setMeta(key, input.value);
         }
       });
 
+      // Default Day 0 to today if not already set
+      const startDateEl = document.getElementById('meta-startdate');
+      if (startDateEl && !startDateEl.value) {
+        const today = new Date().toISOString().slice(0, 10);
+        startDateEl.value = today;
+        this.chart.setMeta('startDate', today);
+      }
+
       this._renderEntries();
+      this.goalsManager?.setDomain(behaviorId, domain.id, `${context.behaviorName} › ${domain.name}`, context.participantId, context.participantName, context.teamName);
     } catch (err) {
       this._showFeedback('Error loading data: ' + err.message, true);
       console.error(err);
@@ -184,15 +207,151 @@ class Dashboard {
   }
 
   async _saveMeta() {
+    if (!this.currentBehaviorId || !this.currentDomainId) return;
     const fields = {};
     document.querySelectorAll('[data-meta]').forEach(input => {
-      fields[input.dataset.meta] = input.value.trim();
+      fields[input.dataset.meta] = input.value.trim() || null;
     });
+    const lo = parseFloat(document.getElementById('aim-low')?.value);
+    const hi = parseFloat(document.getElementById('aim-high')?.value);
+    fields['aim_low']  = isNaN(lo) ? null : lo;
+    fields['aim_high'] = isNaN(hi) ? null : hi;
     try {
-      await DB.meta.upsert(this.currentDomain, fields);
+      await DB.meta.upsert(this.currentBehaviorId, this.currentDomainId, fields);
     } catch (err) {
-      console.error('Meta save failed:', err);
+      this._showFeedback('Meta save failed: ' + err.message, true);
     }
+  }
+
+  _updateProgramReview() {
+    if (!this.isStaff) return;
+
+    const el  = id => document.getElementById(id);
+    const set = (id, val) => { const e = el(id); if (e) e.textContent = val; };
+
+    // Legend: displayed points and level method
+    const dpMap  = { timings: 'Individual', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', count_per_day: 'Daily Total' };
+    const lvlMap = { geomean: 'Geometric Mean', median: 'Median', average: 'Mean' };
+    set('review-displayed-points', dpMap[this.chart.chartType] || '—');
+    set('review-level-method', lvlMap[this.chart.aggregation] || 'Geometric Mean');
+
+    // Marker symbols + labels
+    const dotSym   = { circle: '●', square: '■', triangle: '▲', diamond: '◆' }[this.chart.meta.dotShape || 'circle'] || '●';
+    const xSym     = { x: '×', plus: '+', dash: '—', opencircle: '○' }[this.chart.meta.xShape || 'x'] || '×';
+    const dotColor = this.chart.meta.dotColor || '#009933';
+    const xColor   = this.chart.meta.xColor   || '#cc0000';
+
+    const dotSymEl = el('review-dot-sym');
+    if (dotSymEl) { dotSymEl.textContent = dotSym; dotSymEl.style.color = dotColor; }
+    const xSymEl = el('review-x-sym');
+    if (xSymEl)   { xSymEl.textContent   = xSym;   xSymEl.style.color   = xColor; }
+
+    set('review-correct-label',   this.chart.meta.correct   || 'correct responses');
+    set('review-incorrect-label', this.chart.meta.incorrect || 'incorrect responses');
+
+    // Stat dot colors
+    [1, 2, 3].forEach(i => {
+      const d = el(`review-stat-dot-${i}`);
+      if (d) { d.textContent = dotSym; d.style.color = dotColor; }
+    });
+
+    // Computed stats
+    const stats = this.chart.getStats();
+    set('review-condition', stats.condition || 'N/A');
+
+    const fmt = v => v >= 100 ? Math.round(v).toString()
+      : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toFixed(3);
+
+    const fmtCel = v => {
+      if (!v) return '—';
+      if (Math.abs(v - 1) < 0.005) return '× 1.00';
+      return v > 1 ? `× ${fmt(v)}` : `÷ ${fmt(1 / v)}`;
+    };
+
+    set('review-level',      stats.level      ? fmt(stats.level)             : '—');
+    set('review-celeration', fmtCel(stats.dotCeleration));
+    set('review-bounce',     stats.dotBounce  ? `× ${fmt(stats.dotBounce)}` : '—');
+    set('review-imp-index',  fmtCel(stats.impIndex));
+  }
+
+  _bindMarkerPopup() {
+    const DOT_SHAPES = [
+      { value: 'circle',   sym: '●' },
+      { value: 'square',   sym: '■' },
+      { value: 'triangle', sym: '▲' },
+      { value: 'diamond',  sym: '◆' },
+    ];
+    const X_SHAPES = [
+      { value: 'x',          sym: '×' },
+      { value: 'plus',       sym: '+' },
+      { value: 'dash',       sym: '—' },
+      { value: 'opencircle', sym: '○' },
+    ];
+
+    const popup     = document.getElementById('marker-popup');
+    const titleEl   = document.getElementById('marker-popup-title');
+    const colorIn   = document.getElementById('marker-popup-color');
+    const shapeGrid = document.getElementById('marker-shape-grid');
+    const closeBtn  = document.getElementById('marker-popup-close');
+
+    let currentType = null;
+
+    const colorKey = t => t === 'dot' ? 'dotColor' : 'xColor';
+    const shapeKey = t => t === 'dot' ? 'dotShape' : 'xShape';
+    const shapes   = t => t === 'dot' ? DOT_SHAPES : X_SHAPES;
+
+    const applyMeta = (key, val) => {
+      this.chart.setMeta(key, val);
+      const el = document.getElementById('meta-' + key.toLowerCase());
+      if (el) el.value = val;
+      clearTimeout(this._metaTimer);
+      this._metaTimer = setTimeout(() => this._saveMeta(), 800);
+    };
+
+    const openPopup = (type, anchorRect) => {
+      currentType = type;
+      titleEl.textContent = type === 'dot' ? 'Successes' : 'Errors';
+      colorIn.value = this.chart.meta[colorKey(type)] || (type === 'dot' ? '#009933' : '#cc0000');
+
+      const currentShape = this.chart.meta[shapeKey(type)];
+      shapeGrid.innerHTML = shapes(type).map(s =>
+        `<button class="marker-shape-btn${currentShape === s.value ? ' active' : ''}" data-shape="${s.value}">${s.sym}</button>`
+      ).join('');
+
+      popup.classList.remove('hidden');
+      const top  = anchorRect.bottom + 6;
+      const left = Math.min(anchorRect.left, window.innerWidth - 202);
+      popup.style.top  = top  + 'px';
+      popup.style.left = left + 'px';
+    };
+
+    document.getElementById('legend-box').addEventListener('click', e => {
+      const item = e.target.closest('.legend-item--editable');
+      if (!item) return;
+      openPopup(item.dataset.type, item.getBoundingClientRect());
+    });
+
+    colorIn.addEventListener('input', () => {
+      if (currentType) applyMeta(colorKey(currentType), colorIn.value);
+    });
+
+    shapeGrid.addEventListener('click', e => {
+      const btn = e.target.closest('.marker-shape-btn');
+      if (!btn || !currentType) return;
+      shapeGrid.querySelectorAll('.marker-shape-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyMeta(shapeKey(currentType), btn.dataset.shape);
+    });
+
+    closeBtn.addEventListener('click', () => popup.classList.add('hidden'));
+
+    document.addEventListener('click', e => {
+      if (!popup.classList.contains('hidden') &&
+          !popup.contains(e.target) &&
+          !e.target.closest('.legend-item--editable')) {
+        popup.classList.add('hidden');
+      }
+    });
   }
 
   // ── Log panel ─────────────────────────────────────────────────────────────
@@ -209,7 +368,7 @@ class Dashboard {
       entryDate.value = new Date().toISOString().slice(0, 10);
     }
 
-    ['entry-date','entry-events','entry-floor','entry-note'].forEach(id => {
+    ['entry-date','entry-successes','entry-errors','entry-floor','entry-note'].forEach(id => {
       document.getElementById(id).addEventListener('keydown', e => {
         if (e.key === 'Enter') this._addEntry();
       });
@@ -218,7 +377,7 @@ class Dashboard {
     // Hide measurement fields when type is a line (phase or intervention)
     document.getElementById('entry-type').addEventListener('change', e => {
       const isLine = e.target.value === 'phase' || e.target.value === 'intervention';
-      ['entry-events','entry-floor'].forEach(id => {
+      ['entry-successes','entry-errors','entry-floor'].forEach(id => {
         const el = document.getElementById(id);
         el.closest('.field-group').style.opacity = isLine ? '0.4' : '1';
         el.disabled = isLine;
@@ -245,51 +404,70 @@ class Dashboard {
     if (!this.chart.meta.startDate) {
       this._showFeedback('Set Day 0 date in Chart Info first.', true); return null;
     }
-    let val = null, floor = null;
+    let successes = null, errors = null;
     if (!this.chart._isLineType(type)) {
-      const events   = parseInt(document.getElementById('entry-events').value, 10);
-      const floorSec = this._parseFloor(document.getElementById('entry-floor').value.trim());
-      if (!events || events < 1 || isNaN(events)) {
-        this._showFeedback('Enter a valid event count.', true); return null;
+      const successCount = parseInt(document.getElementById('entry-successes').value, 10);
+      const errorCount   = parseInt(document.getElementById('entry-errors').value, 10);
+      const hasSuccesses = !isNaN(successCount) && successCount >= 0;
+      const hasErrors    = !isNaN(errorCount)   && errorCount   >= 0;
+      if (!hasSuccesses && !hasErrors) {
+        this._showFeedback('Enter successes, errors, or both.', true); return null;
       }
-      if (!floorSec || floorSec <= 0) {
-        this._showFeedback('Enter floor time (e.g. 0:30 or 1:00:00).', true); return null;
+      if (this.chart.chartType === 'count_per_day') {
+        if (hasSuccesses) successes = { val: successCount, floor: null };
+        if (hasErrors)    errors    = { val: errorCount,   floor: null };
+      } else {
+        const floorSec = this._parseFloor(document.getElementById('entry-floor').value.trim());
+        if (!floorSec || floorSec <= 0) {
+          this._showFeedback('Enter floor time (e.g. 0:30 or 1:00:00).', true); return null;
+        }
+        if (hasSuccesses) successes = { val: successCount * 60 / floorSec, floor: floorSec };
+        if (hasErrors)    errors    = { val: errorCount   * 60 / floorSec, floor: floorSec };
       }
-      val   = events * 60 / floorSec;
-      floor = floorSec;
     }
     const day = Math.round(
       (new Date(dateStr) - new Date(this.chart.meta.startDate)) / 86400000
     );
-    return { type, day, val, note, floor };
+    return { type, day, note, successes, errors };
   }
 
   async _addEntry() {
     if (this._editingIndex !== null) { await this._saveEdit(); return; }
 
+    if (!this.currentBehaviorId) {
+      this._showFeedback('Select a behavior from the sidebar first.', true);
+      return;
+    }
+
     const entry = this._readLogForm();
     if (!entry) return;
-    const { type, day, val, note, floor } = entry;
+    const { type, day, note, successes, errors } = entry;
 
     this._setLoading(true);
     try {
-      const saved = await DB.points.add({
-        domain_slug: this.currentDomain,
-        type, day, val, note, floor
-      });
-      this.chart.points.push({
-        id: saved.id, type, day, val, note, floor,
-        px: this.chart._isLineType(type) ? this.chart.xL(day) : this.chart.xP(day),
-        py: this.chart._isLineType(type) ? null : this.chart.yP(val)
-      });
+      if (this.chart._isLineType(type)) {
+        const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type, day, val: null, note, floor: null });
+        this.chart.points.push({ id: saved.id, type, day, val: null, note, floor: null, px: this.chart.xL(day), py: null });
+      } else {
+        if (successes) {
+          const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type: 'dot', day, val: successes.val, note, floor: successes.floor });
+          this.chart.points.push({ id: saved.id, type: 'dot', day, val: successes.val, note, floor: successes.floor, px: this.chart.xP(day), py: this.chart.yP(successes.val) });
+        }
+        if (errors) {
+          const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type: 'x', day, val: errors.val, note, floor: errors.floor });
+          this.chart.points.push({ id: saved.id, type: 'x', day, val: errors.val, note, floor: errors.floor, px: this.chart.xP(day), py: this.chart.yP(errors.val) });
+        }
+      }
       this.chart.draw();
       this.chart.scrollToDay(day);
-      document.getElementById('entry-date').value   = new Date().toISOString().slice(0, 10);
-      document.getElementById('entry-events').value = '';
-      document.getElementById('entry-floor').value  = '';
-      document.getElementById('entry-note').value   = '';
+      document.getElementById('entry-date').value      = new Date().toISOString().slice(0, 10);
+      document.getElementById('entry-successes').value = '';
+      document.getElementById('entry-errors').value    = '';
+      document.getElementById('entry-floor').value     = '';
+      document.getElementById('entry-note').value      = '';
       this._renderEntries();
       this._showFeedback('Added.');
+      this.goalsManager?.checkGoals(this.chart);
     } catch (err) {
       this._showFeedback('Save failed: ' + err.message, true);
       console.error(err);
@@ -301,27 +479,32 @@ class Dashboard {
   async _saveEdit() {
     const entry = this._readLogForm();
     if (!entry) return;
-    const { type, day, val, note, floor } = entry;
+    const { type, day, note, successes, errors } = entry;
     const pts = this.chart.getPoints();
     const old = pts[this._editingIndex];
     this._setLoading(true);
     try {
       if (old.id) await DB.points.delete(old.id);
       this.chart.removePoint(this._editingIndex);
-      const saved = await DB.points.add({
-        domain_slug: this.currentDomain,
-        type, day, val, note, floor
-      });
-      this.chart.points.push({
-        id: saved.id, type, day, val, note, floor,
-        px: this.chart._isLineType(type) ? this.chart.xL(day) : this.chart.xP(day),
-        py: this.chart._isLineType(type) ? null : this.chart.yP(val)
-      });
+      if (this.chart._isLineType(type)) {
+        const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type, day, val: null, note, floor: null });
+        this.chart.points.push({ id: saved.id, type, day, val: null, note, floor: null, px: this.chart.xL(day), py: null });
+      } else {
+        if (successes) {
+          const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type: 'dot', day, val: successes.val, note, floor: successes.floor });
+          this.chart.points.push({ id: saved.id, type: 'dot', day, val: successes.val, note, floor: successes.floor, px: this.chart.xP(day), py: this.chart.yP(successes.val) });
+        }
+        if (errors) {
+          const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type: 'x', day, val: errors.val, note, floor: errors.floor });
+          this.chart.points.push({ id: saved.id, type: 'x', day, val: errors.val, note, floor: errors.floor, px: this.chart.xP(day), py: this.chart.yP(errors.val) });
+        }
+      }
       this.chart.draw();
       this.chart.scrollToDay(day);
       this._exitEditMode();
       this._renderEntries();
       this._showFeedback('Updated.');
+      this.goalsManager?.checkGoals(this.chart);
     } catch (err) {
       this._showFeedback('Save failed: ' + err.message, true);
       console.error(err);
@@ -335,7 +518,8 @@ class Dashboard {
     const p   = pts[index];
     this._editingIndex = index;
 
-    document.getElementById('entry-type').value = p.type;
+    const isLine = this.chart._isLineType(p.type);
+    document.getElementById('entry-type').value = isLine ? p.type : 'data';
     document.getElementById('entry-type').dispatchEvent(new Event('change'));
 
     if (this.chart.meta.startDate) {
@@ -344,12 +528,21 @@ class Dashboard {
       document.getElementById('entry-date').value = dt.toISOString().slice(0, 10);
     }
 
-    if (!this.chart._isLineType(p.type) && p.floor) {
-      document.getElementById('entry-events').value = Math.round(p.val * p.floor / 60);
-      document.getElementById('entry-floor').value  = this._formatFloor(p.floor);
-    } else {
-      document.getElementById('entry-events').value = '';
-      document.getElementById('entry-floor').value  = '';
+    if (!isLine) {
+      if (this.chart.chartType === 'count_per_day') {
+        document.getElementById('entry-successes').value = p.type === 'dot' ? Math.round(p.val) : '';
+        document.getElementById('entry-errors').value    = p.type === 'x'   ? Math.round(p.val) : '';
+        document.getElementById('entry-floor').value     = '';
+      } else if (p.floor) {
+        const count = Math.round(p.val * p.floor / 60);
+        document.getElementById('entry-successes').value = p.type === 'dot' ? count : '';
+        document.getElementById('entry-errors').value    = p.type === 'x'   ? count : '';
+        document.getElementById('entry-floor').value     = this._formatFloor(p.floor);
+      } else {
+        document.getElementById('entry-successes').value = '';
+        document.getElementById('entry-errors').value    = '';
+        document.getElementById('entry-floor').value     = '';
+      }
     }
     document.getElementById('entry-note').value = p.note || '';
 
@@ -370,12 +563,13 @@ class Dashboard {
     document.getElementById('btn-clear').classList.remove('hidden');
     document.getElementById('btn-demo').classList.remove('hidden');
     document.querySelector('.log-section').classList.remove('log-section--editing');
-    document.getElementById('entry-type').value = 'dot';
+    document.getElementById('entry-type').value = 'data';
     document.getElementById('entry-type').dispatchEvent(new Event('change'));
-    document.getElementById('entry-date').value   = new Date().toISOString().slice(0, 10);
-    document.getElementById('entry-events').value = '';
-    document.getElementById('entry-floor').value  = '';
-    document.getElementById('entry-note').value   = '';
+    document.getElementById('entry-date').value      = new Date().toISOString().slice(0, 10);
+    document.getElementById('entry-successes').value = '';
+    document.getElementById('entry-errors').value    = '';
+    document.getElementById('entry-floor').value     = '';
+    document.getElementById('entry-note').value      = '';
   }
 
   _parseFloor(str) {
@@ -413,10 +607,11 @@ class Dashboard {
   }
 
   async _clearAll() {
-    if (!confirm('Clear all data for this domain?')) return;
+    if (!this.currentBehaviorId) return;
+    if (!confirm('Clear all data for this behavior and domain?')) return;
     this._setLoading(true);
     try {
-      await DB.points.clear(this.currentDomain);
+      await DB.points.clear(this.currentBehaviorId, this.currentDomainId);
       this.chart.clearPoints();
       this._renderEntries();
     } catch (err) {
@@ -461,9 +656,11 @@ class Dashboard {
     el.innerHTML = [...pts].reverse().map((p, ri) => {
       const i = pts.length - 1 - ri;
       let icon, info;
-      const rateDetail = p.floor
-        ? `${Math.round(p.val * p.floor / 60)} evt / ${this._formatFloor(p.floor)} → ${fmt(p.val)}/min`
-        : `${fmt(p.val)}/min`;
+      const rateDetail = this.chart.chartType === 'count_per_day'
+        ? `${Math.round(p.val)} count`
+        : p.floor
+          ? `${Math.round(p.val * p.floor / 60)} evt / ${this._formatFloor(p.floor)} → ${fmt(p.val)}/min`
+          : `${fmt(p.val)}/min`;
       if (p.type === 'dot') {
         icon = '<span class="entry-icon-dot"></span>';
         info = `<span class="entry-val">${dayLabel(p.day)} &middot; ${rateDetail}</span>`
@@ -605,11 +802,28 @@ class Dashboard {
 
   _bindExport() {
     document.getElementById('btn-export').addEventListener('click', () => {
-      this.chart.exportCSV(this.domains[this.currentDomain]);
+      const domainName = this.currentDomain ? this.domains[this.currentDomain] : 'Chart';
+      const label = this._context
+        ? `${this._context.participantName} — ${this._context.behaviorName} — ${domainName}`
+        : domainName;
+      this.chart.exportCSV(label);
     });
   }
 
   // ── UI helpers ────────────────────────────────────────────────────────────
+
+  _showBehaviorPrompt() {
+    document.getElementById('behavior-prompt')?.classList.remove('hidden');
+    ['.chart-type-section', '.chart-section', '.review-goals-row', '.entries-section'].forEach(sel =>
+      document.querySelector(sel)?.classList.add('hidden')
+    );
+  }
+
+  _hideBehaviorPrompt() {
+    document.getElementById('behavior-prompt')?.classList.add('hidden');
+    ['.chart-type-section', '.chart-section', '.review-goals-row', '.meta-section', '.entries-section']
+      .forEach(sel => document.querySelector(sel)?.classList.remove('hidden'));
+  }
 
   _setLoading(on) {
     document.getElementById('btn-add').disabled = on;

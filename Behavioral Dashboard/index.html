@@ -11,6 +11,29 @@
 <body>
   <div id="login-overlay" class="hidden"></div>
   <div id="invite-overlay" class="hidden"></div>
+  <div id="inactivity-overlay" class="hidden">
+    <div class="login-card inactivity-card">
+      <h2 class="inactivity-title">Session Expiring</h2>
+      <p class="inactivity-msg">You'll be logged out due to inactivity in</p>
+      <div class="inactivity-countdown" id="inactivity-countdown">5:00</div>
+      <button class="inactivity-stay-btn" id="inactivity-stay">Stay logged in</button>
+    </div>
+  </div>
+
+  <!-- Full-screen hierarchy home page -->
+  <div id="hierarchy-view" class="hv-overlay hidden">
+    <header class="hv-topbar">
+      <img src="img/logo.png" alt="Team ABA" class="hv-logo">
+      <div>
+        <div class="hv-eyebrow">Standard Celeration Chart</div>
+        <div class="hv-subtitle">Select a behavior to analyze</div>
+      </div>
+      <div class="hv-user-area" id="hv-user-badge"></div>
+    </header>
+    <div class="hv-content" id="hv-content">
+      <p class="hv-loading">Loading&#8230;</p>
+    </div>
+  </div>
 
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
@@ -21,19 +44,7 @@
         <img src="img/logo.png" alt="Team ABA" class="sidebar-logo-img">
       </div>
       <nav class="sidebar-nav">
-        <div class="nav-section-label">Domains</div>
-        <a class="nav-item active" data-domain="movement" href="#">
-          <span class="nav-dot"></span> Movement Fluency
-        </a>
-        <a class="nav-item" data-domain="physical" href="#">
-          <span class="nav-dot"></span> Physical Load
-        </a>
-        <a class="nav-item" data-domain="decision" href="#">
-          <span class="nav-dot"></span> Decision Fluency
-        </a>
-        <a class="nav-item" data-domain="emotional" href="#">
-          <span class="nav-dot"></span> Emotional Performance
-        </a>
+        <button class="nav-overview-btn" id="btn-overview">&#8592; Overview</button>
       </nav>
     </aside>
 
@@ -54,6 +65,11 @@
 
       <div class="content">
 
+        <!-- Behavior prompt — shown until a behavior is selected from the sidebar -->
+        <div id="behavior-prompt" class="behavior-prompt hidden">
+          <p class="behavior-prompt-msg">Select a behavior from the sidebar to view its chart.</p>
+        </div>
+
         <!-- Log entry (top) -->
         <section class="log-section">
           <h2 class="section-title">Log entry</h2>
@@ -61,8 +77,7 @@
             <div class="field-group">
               <label for="entry-type">Type</label>
               <select id="entry-type">
-                <option value="dot">● Correct response (dot)</option>
-                <option value="x">× Error / deceleration (×)</option>
+                <option value="data">● × Data entry</option>
                 <option value="phase">| Phase change (solid line)</option>
                 <option value="intervention">¦ Intervention (dashed line)</option>
               </select>
@@ -72,8 +87,12 @@
               <input type="date" id="entry-date">
             </div>
             <div class="field-group">
-              <label for="entry-events">Events</label>
-              <input type="number" id="entry-events" min="1" step="1" placeholder="e.g. 15">
+              <label for="entry-successes">Successes (●)</label>
+              <input type="number" id="entry-successes" min="0" step="1" placeholder="e.g. 17">
+            </div>
+            <div class="field-group">
+              <label for="entry-errors">Errors (×)</label>
+              <input type="number" id="entry-errors" min="0" step="1" placeholder="e.g. 20">
             </div>
             <div class="field-group">
               <label for="entry-floor">Floor (m:ss or h:mm:ss)</label>
@@ -112,6 +131,7 @@
             <option value="daily" selected>Daily</option>
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
+            <option value="count_per_day">Count Per Day</option>
           </select>
 
           <div id="aggregation-control" class="aggregation-control hidden">
@@ -141,6 +161,108 @@
             <div class="note-popup hidden" id="note-popup"></div>
           </div>
         </section>
+
+        <!-- Program Review + Client Goals (staff only) -->
+        <div class="review-goals-row">
+        <section class="review-section hidden" id="review-section">
+          <h2 class="section-title">Program Review</h2>
+          <div class="review-panel">
+            <div class="review-side-label">COUNTING TIMES</div>
+            <div class="review-body">
+
+              <div class="review-block-title">PROGRAM OVERVIEW</div>
+              <table class="review-table">
+                <tr>
+                  <td class="review-key">GOAL</td>
+                  <td>
+                    <select id="review-goal" data-meta="goal" class="review-select">
+                      <option value="">—</option>
+                      <option value="Acceleration">Acceleration</option>
+                      <option value="Deceleration">Deceleration</option>
+                      <option value="Both">Both</option>
+                    </select>
+                  </td>
+                </tr>
+              </table>
+
+              <div class="review-block-title">LEGEND</div>
+              <table class="review-table">
+                <tr><td class="review-key">DISPLAYED POINTS</td><td id="review-displayed-points">—</td></tr>
+                <tr><td class="review-key">CELERATION METHOD</td><td>Least Squares</td></tr>
+                <tr><td class="review-key">BOUNCE METHOD</td><td>Max Residual</td></tr>
+                <tr><td class="review-key">LEVEL METHOD</td><td id="review-level-method">—</td></tr>
+              </table>
+
+              <div class="review-markers">
+                <div class="review-marker-row"><span class="review-marker-sym" id="review-dot-sym">●</span><span id="review-correct-label">correct responses</span></div>
+                <div class="review-marker-row"><span class="review-marker-sym" id="review-x-sym">×</span><span id="review-incorrect-label">incorrect responses</span></div>
+                <div class="review-marker-row"><span class="review-marker-sym">—</span><span>counting time</span></div>
+              </div>
+
+              <div class="review-block-title">CURRENT CONDITION</div>
+              <div class="review-condition" id="review-condition">N/A</div>
+              <table class="review-table">
+                <tr>
+                  <td class="review-key">LEVEL</td>
+                  <td class="review-sym-cell"><span class="review-stat-dot" id="review-stat-dot-1">●</span></td>
+                  <td class="review-val" id="review-level">—</td>
+                </tr>
+                <tr>
+                  <td class="review-key">CELERATION</td>
+                  <td class="review-sym-cell"><span class="review-stat-dot" id="review-stat-dot-2">●</span></td>
+                  <td class="review-val" id="review-celeration">—</td>
+                </tr>
+                <tr>
+                  <td class="review-key">BOUNCE</td>
+                  <td class="review-sym-cell"><span class="review-stat-dot" id="review-stat-dot-3">●</span></td>
+                  <td class="review-val" id="review-bounce">—</td>
+                </tr>
+                <tr>
+                  <td class="review-key">IMP. INDEX</td>
+                  <td class="review-sym-cell"></td>
+                  <td class="review-val" id="review-imp-index">—</td>
+                </tr>
+              </table>
+
+            </div>
+          </div>
+        </section>
+
+        <section class="goals-section hidden" id="goals-section">
+          <h2 class="section-title">Client Goals</h2>
+          <div class="goals-panel">
+            <div class="goals-add">
+              <div class="goals-field">
+                <label class="goals-label">Goal type</label>
+                <select id="goal-type" class="goals-select">
+                  <option value="count_per_min">Rate (count/min)</option>
+                  <option value="acceleration">Acceleration (×/wk)</option>
+                  <option value="deceleration">Deceleration (÷/wk)</option>
+                  <option value="bounce">Bounce</option>
+                </select>
+              </div>
+              <div class="goals-field">
+                <label class="goals-label">Target value</label>
+                <div class="goals-input-row">
+                  <input type="number" id="goal-value" class="goals-value-input" min="0" step="any" placeholder="e.g. 1.25">
+                </div>
+              </div>
+              <div class="goals-field">
+                <label class="goals-label">Note (optional)</label>
+                <div class="goals-input-row">
+                  <input type="text" id="goal-note" class="goals-note-input" placeholder="e.g. Track weekly in practice">
+                  <button type="button" class="btn-primary goals-add-btn" id="btn-add-goal">Add</button>
+                </div>
+              </div>
+              <p class="goals-feedback hidden" id="goals-feedback"></p>
+            </div>
+            <div id="goals-list" class="goals-list">
+              <p class="goals-empty">No goals set.</p>
+            </div>
+            <p class="goals-achieved-notice hidden" id="goals-achieved-notice"></p>
+          </div>
+        </section>
+        </div><!-- /review-goals-row -->
 
         <!-- Chart metadata fields (renders onto the chart footer) -->
         <section class="meta-section">
@@ -194,6 +316,10 @@
               <label for="meta-deceltarget">Deceleration target (÷/wk)</label>
               <input type="number" id="meta-deceltarget" data-meta="deceltarget" min="1" step="0.01" placeholder="e.g. 1.25">
             </div>
+            <input type="hidden" id="meta-dotcolor" data-meta="dotColor" value="#009933">
+            <input type="hidden" id="meta-dotshape" data-meta="dotShape" value="circle">
+            <input type="hidden" id="meta-xcolor"   data-meta="xColor"   value="#cc0000">
+            <input type="hidden" id="meta-xshape"   data-meta="xShape"   value="x">
           </div>
         </section>
 
@@ -210,10 +336,24 @@
   </div>
 
   <script src="js/db.js"></script>
+  <script src="js/utils/inactivityMonitor.js"></script>
+  <script src="js/utils/goalsManager.js"></script>
   <script src="js/components/login.js"></script>
   <script src="js/components/invite.js"></script>
   <script src="js/components/scc.js"></script>
+  <script src="js/components/hierarchyView.js"></script>
+  <script src="js/components/navTree.js"></script>
   <script src="js/components/dashboard.js"></script>
   <script src="js/app.js"></script>
+  <div class="marker-popup hidden" id="marker-popup">
+    <div class="marker-popup-header">
+      <span class="marker-popup-title" id="marker-popup-title"></span>
+      <button class="marker-popup-close" id="marker-popup-close">✕</button>
+    </div>
+    <label class="marker-popup-label">Color</label>
+    <input type="color" class="marker-popup-color" id="marker-popup-color">
+    <label class="marker-popup-label">Marker</label>
+    <div class="marker-shape-grid" id="marker-shape-grid"></div>
+  </div>
 </body>
 </html>

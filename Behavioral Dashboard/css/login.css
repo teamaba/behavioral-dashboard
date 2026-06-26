@@ -129,7 +129,7 @@
   border-radius: 20px;
   background: #d0f0fa;
   color: #005580;
-  text-transform: uppercase;
+  text-transform: capitalize;
 }
 .user-badge button {
   font-size: 11px;
@@ -149,7 +149,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 500;
+  z-index: 600;
 }
 #invite-overlay.hidden { display: none; }
 
@@ -266,3 +266,70 @@
   width: 100%;
 }
 .invite-select:focus { border-color: #007faa; background: #fff; }
+
+/* ── Inactivity warning modal ── */
+#inactivity-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 51, 68, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  font-family: Arial, sans-serif;
+}
+#inactivity-overlay.hidden { display: none; }
+
+.inactivity-card {
+  text-align: center;
+  max-width: 320px;
+}
+
+.inactivity-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #003344;
+  margin: 0 0 8px;
+}
+
+.inactivity-msg {
+  font-size: 13px;
+  color: #556677;
+  margin: 0 0 14px;
+  line-height: 1.4;
+}
+
+.inactivity-countdown {
+  font-size: 52px;
+  font-weight: bold;
+  font-family: monospace;
+  color: #cc3333;
+  letter-spacing: 0.05em;
+  margin: 0 0 22px;
+}
+
+.inactivity-stay-btn {
+  width: 100%;
+  font-size: 13px;
+  font-weight: bold;
+  padding: 9px 0;
+  background: #0099cc;
+  color: #fff;
+  border: 1px solid #0099cc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+}
+.inactivity-stay-btn:hover { background: #007faa; }
+
+/* Notice shown on login page after an inactivity logout */
+.login-inactivity-msg {
+  background: #fff8e1;
+  border: 1px solid #ffc107;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #664d03;
+  text-align: center;
+  margin: 0 0 14px;
+}
