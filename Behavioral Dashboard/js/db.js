@@ -90,7 +90,23 @@ const DB = (() => {
   }
 
   async function requestPasswordReset(email) {
-    return authRequest('/recover', { email });
+    const redirectTo = window.location.href.split('#')[0];
+    return authRequest(`/recover?redirect_to=${encodeURIComponent(redirectTo)}`, { email });
+  }
+
+  async function updatePassword(token, newPassword) {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ password: newPassword })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error_description || data.msg || data.error || 'Failed to update password');
+    return data;
   }
 
   async function restoreSession() {
@@ -381,7 +397,7 @@ const DB = (() => {
   return {
     auth: {
       signUp, signIn, signOut, restoreSession,
-      requestPasswordReset,
+      requestPasswordReset, updatePassword,
       getProfile, isStaff, isSupervisor, isClient, isLoggedIn
     },
     teams:         { getAll: getTeams, add: addTeam, seedDemo: seedDemoHierarchy },

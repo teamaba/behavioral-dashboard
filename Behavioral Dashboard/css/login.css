@@ -72,8 +72,30 @@
   background: #f7fdff;
   font-family: Arial, sans-serif;
   outline: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 .login-field input:focus { border-color: #007faa; background: #fff; }
+
+.password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.password-wrap input { padding-right: 36px; }
+.password-toggle {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  color: #336677;
+  user-select: none;
+}
+.password-toggle:hover { color: #0099cc; }
 
 .login-btn {
   width: 100%;
