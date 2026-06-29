@@ -106,12 +106,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.loginScreen = new LoginScreen(boot);
   window.inviteModal = new InviteModal();
 
-  // Detect password-reset link (Supabase appends #access_token=...&type=recovery)
-  const hashParams = new URLSearchParams(window.location.hash.slice(1));
-  if (hashParams.get('type') === 'recovery') {
-    const recoveryToken = hashParams.get('access_token');
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
-    window.loginScreen.showPasswordReset(recoveryToken);
+  // Detect password-reset link — Supabase may use hash fragment or query params
+  const _hash  = new URLSearchParams(window.location.hash.slice(1));
+  const _query = new URLSearchParams(window.location.search);
+  const _type  = _hash.get('type')         || _query.get('type');
+  const _token = _hash.get('access_token') || _query.get('access_token');
+
+  if (_type === 'recovery' && _token) {
+    window.history.replaceState(null, '', window.location.pathname);
+    window.loginScreen.showPasswordReset(_token);
   } else {
     // Try to restore a previous session before showing the login screen
     const restored = await DB.auth.restoreSession();
