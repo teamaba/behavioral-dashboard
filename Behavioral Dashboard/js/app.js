@@ -106,19 +106,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.loginScreen = new LoginScreen(boot);
   window.inviteModal = new InviteModal();
 
-  // Try to restore a previous session before showing the login screen
-  const restored = await DB.auth.restoreSession();
-  if (restored) {
-    boot();
+  // Detect password-reset link (Supabase appends #access_token=...&type=recovery)
+  const hashParams = new URLSearchParams(window.location.hash.slice(1));
+  if (hashParams.get('type') === 'recovery') {
+    const recoveryToken = hashParams.get('access_token');
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    window.loginScreen.showPasswordReset(recoveryToken);
   } else {
-    window.loginScreen.show();
-    if (logoutReason === 'inactivity') {
-      const card = document.querySelector('#login-overlay .login-card');
-      if (card) {
-        const msg = document.createElement('p');
-        msg.className = 'login-inactivity-msg';
-        msg.textContent = 'You were logged out due to inactivity.';
-        card.prepend(msg);
+    // Try to restore a previous session before showing the login screen
+    const restored = await DB.auth.restoreSession();
+    if (restored) {
+      boot();
+    } else {
+      window.loginScreen.show();
+      if (logoutReason === 'inactivity') {
+        const card = document.querySelector('#login-overlay .login-card');
+        if (card) {
+          const msg = document.createElement('p');
+          msg.className = 'login-inactivity-msg';
+          msg.textContent = 'You were logged out due to inactivity.';
+          card.prepend(msg);
+        }
       }
     }
   }
