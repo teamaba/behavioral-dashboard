@@ -90,7 +90,7 @@ const DB = (() => {
   }
 
   async function requestPasswordReset(email) {
-    const redirectTo = window.location.href.split('#')[0];
+    const redirectTo = 'https://teamaba.github.io/behavioral-dashboard/Behavioral%20Dashboard/';
     return authRequest(`/recover?redirect_to=${encodeURIComponent(redirectTo)}`, { email });
   }
 
