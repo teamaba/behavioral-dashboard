@@ -30,8 +30,10 @@ class Dashboard {
     this.goalsManager = new GoalsManager();
     if (this.isStaff) {
       document.getElementById('review-section').classList.remove('hidden');
-      this.chart.afterDraw = () => this._updateProgramReview();
     }
+    this.chart.afterDraw = () => {
+      if (this.isStaff) this._updateProgramReview();
+    };
 
     this._bindMetaFields();
     this._bindMarkerPopup();
@@ -39,7 +41,6 @@ class Dashboard {
     this._bindChartType();
     this._bindAggregation();
     this._bindAim();
-    this._bindExport();
     this._bindDemo();
     this._applyAccessControl();
     this._showBehaviorPrompt();
@@ -799,30 +800,80 @@ class Dashboard {
   }
 
   // ── Export ────────────────────────────────────────────────────────────────
+  // Wired from app.js's _renderUserBadge(), since #btn-export-image now lives
+  // in the dynamically-rendered badge, not in the static page markup.
 
-  _bindExport() {
-    document.getElementById('btn-export').addEventListener('click', () => {
-      const domainName = this.currentDomain ? this.domains[this.currentDomain] : 'Chart';
-      const label = this._context
-        ? `${this._context.participantName} — ${this._context.behaviorName} — ${domainName}`
-        : domainName;
-      this.chart.exportCSV(label);
+  _exportChartImage() {
+    const sourceCanvas = document.getElementById('scc-canvas');
+    if (!sourceCanvas) return;
+
+    const domainName = this.currentDomain ? this.domains[this.currentDomain] : 'Chart';
+    const primaryLabel = this._context
+      ? [this._context.participantName, this._context.behaviorName, domainName].filter(Boolean).join(' › ')
+      : domainName;
+
+    const rows = [{
+      label: primaryLabel,
+      dotColor: this.chart.meta.dotColor || '#009933',
+      xColor:   this.chart.meta.xColor   || '#cc0000',
+    }];
+
+    const legendH = 22 + rows.length * 18;
+    const out = document.createElement('canvas');
+    out.width  = sourceCanvas.width;
+    out.height = sourceCanvas.height + legendH;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(sourceCanvas, 0, 0);
+
+    ctx.font = 'bold 13px Arial, sans-serif';
+    ctx.fillStyle = '#003344';
+    ctx.textAlign = 'left';
+    ctx.fillText('Legend', 16, sourceCanvas.height + 18);
+
+    ctx.font = '12px Arial, sans-serif';
+    rows.forEach((row, idx) => {
+      const y = sourceCanvas.height + 38 + idx * 18;
+      ctx.fillStyle = row.dotColor;
+      ctx.fillText('●', 16, y);
+      ctx.fillStyle = row.xColor;
+      ctx.fillText('×', 32, y);
+      ctx.fillStyle = '#003344';
+      ctx.fillText(row.label || 'Chart', 50, y);
+    });
+
+    out.toBlob(blob => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'chart.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     });
   }
 
   // ── UI helpers ────────────────────────────────────────────────────────────
 
+  // Scoped to .content (the real dashboard's own container) — .chart-section
+  // also exists inside the separate Overlay Comparison view, and an unscoped
+  // querySelector would grab whichever one comes first in the document.
   _showBehaviorPrompt() {
+    const root = document.querySelector('.content');
     document.getElementById('behavior-prompt')?.classList.remove('hidden');
     ['.chart-type-section', '.chart-section', '.review-goals-row', '.entries-section'].forEach(sel =>
-      document.querySelector(sel)?.classList.add('hidden')
+      root?.querySelector(sel)?.classList.add('hidden')
     );
   }
 
   _hideBehaviorPrompt() {
+    const root = document.querySelector('.content');
     document.getElementById('behavior-prompt')?.classList.add('hidden');
     ['.chart-type-section', '.chart-section', '.review-goals-row', '.meta-section', '.entries-section']
-      .forEach(sel => document.querySelector(sel)?.classList.remove('hidden'));
+      .forEach(sel => root?.querySelector(sel)?.classList.remove('hidden'));
   }
 
   _setLoading(on) {

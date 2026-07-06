@@ -140,6 +140,7 @@ const DB = (() => {
   function isStaff()      { return currentProfile?.role === 'staff' || currentProfile?.role === 'supervisor'; }
   function isSupervisor() { return currentProfile?.role === 'supervisor'; }
   function isClient()     { return currentProfile?.role === 'client'; }
+  function isGuide()      { return currentProfile?.role === 'guide'; }
   function isLoggedIn()   { return !!currentUser; }
 
   // ── Teams ──────────────────────────────────────────────────────────────
@@ -210,6 +211,31 @@ const DB = (() => {
       method: 'PATCH',
       body: JSON.stringify(fields)
     });
+  }
+
+  // ── Guides (read-only, multi-participant role) ──────────────────────────
+
+  async function getAllGuides() {
+    return restRequest('/profiles?role=eq.guide&order=email.asc');
+  }
+
+  async function getAllGuideAssignments() {
+    return restRequest('/guide_participants?select=guide_user_id,participant_id,profiles(email)');
+  }
+
+  async function assignGuide(participantId, guideUserId) {
+    const rows = await restRequest('/guide_participants', {
+      method: 'POST',
+      body: JSON.stringify({ guide_user_id: guideUserId, participant_id: participantId })
+    });
+    return rows[0];
+  }
+
+  async function unassignGuide(participantId, guideUserId) {
+    return restRequest(
+      `/guide_participants?participant_id=eq.${participantId}&guide_user_id=eq.${guideUserId}`,
+      { method: 'DELETE' }
+    );
   }
 
   // ── Behaviors ──────────────────────────────────────────────────────────
@@ -398,10 +424,11 @@ const DB = (() => {
     auth: {
       signUp, signIn, signOut, restoreSession,
       requestPasswordReset, updatePassword,
-      getProfile, isStaff, isSupervisor, isClient, isLoggedIn
+      getProfile, isStaff, isSupervisor, isClient, isGuide, isLoggedIn
     },
     teams:         { getAll: getTeams, add: addTeam, seedDemo: seedDemoHierarchy },
     participants:  { getAll: getParticipants, getSelf: getSelfParticipant, add: addParticipant, update: updateParticipant },
+    guides:        { getAll: getAllGuides, getAllAssignments: getAllGuideAssignments, assign: assignGuide, unassign: unassignGuide },
     notifications: { getAll: getAllNotificationEmails, getForParticipant: getNotificationEmails, add: addNotificationEmail, delete: deleteNotificationEmail },
     behaviors:    { get: getBehaviors, getAll: getAllBehaviors, add: addBehavior, delete: deleteBehavior },
     domains:      { getAll: getDomains },

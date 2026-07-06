@@ -30,6 +30,7 @@ class InviteModal {
           <label for="invite-role">Role</label>
           <select id="invite-role" class="invite-select">
             <option value="client">Client</option>
+            <option value="guide">Guide</option>
             <option value="staff">Staff</option>
             <option value="supervisor">Supervisor</option>
           </select>
@@ -77,6 +78,7 @@ class InviteModal {
             ` : `
               <select class="user-role-select" data-id="${p.id}">
                 <option value="client"      ${p.role === 'client'      ? 'selected' : ''}>Client</option>
+                <option value="guide"       ${p.role === 'guide'       ? 'selected' : ''}>Guide</option>
                 <option value="staff"       ${p.role === 'staff'       ? 'selected' : ''}>Staff</option>
                 <option value="supervisor"  ${p.role === 'supervisor'  ? 'selected' : ''}>Supervisor</option>
               </select>

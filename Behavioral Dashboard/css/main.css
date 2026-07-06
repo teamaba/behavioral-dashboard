@@ -138,12 +138,6 @@ body {
   white-space: nowrap;
 }
 
-/* Dashboard topbar action buttons */
-.topbar-action-btn {
-  font-size: 11px;
-  padding: 5px 12px;
-}
-
 .badge {
   font-size: 11px;
   font-weight: bold;
@@ -1054,6 +1048,35 @@ body {
   margin-top: 1px;
 }
 
+.hv-search-wrap {
+  flex: 1;
+  max-width: 480px;
+  min-width: 140px;
+  margin: 0 16px;
+}
+.hv-search-input {
+  width: 100%;
+  font-size: 13px;
+  padding: 8px 12px;
+  border: 1px solid #0099cc;
+  border-radius: 16px;
+  color: #003344;
+  background: #f7fdff;
+  font-family: Arial, sans-serif;
+  outline: none;
+  box-sizing: border-box;
+}
+.hv-search-input:focus { border-color: #007faa; background: #fff; }
+.hv-search-input::-webkit-search-cancel-button { cursor: pointer; }
+
+.hv-search-empty {
+  font-size: 13px;
+  color: #5a8a9a;
+  text-align: center;
+  padding: 16px 0 4px;
+  margin: 0;
+}
+
 .hv-user-area {
   margin-left: auto;
   display: flex;
@@ -1503,12 +1526,53 @@ body {
 .hv-pnotif-add-row .hv-pnotif-email-input { flex: 2 1 120px; min-width: 0; }
 .hv-pnotif-add-row .hv-pnotif-label-input { flex: 1 1 80px; min-width: 0; }
 
+/* ── Guides with access (per-participant, supervisor only) ── */
+.hv-guide-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+.hv-guide-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #003344;
+  background: #f7fdff;
+  border: 1px solid #d0e8f0;
+  border-radius: 10px;
+  padding: 3px 6px 3px 9px;
+}
+.hv-guide-chip-del {
+  background: none;
+  border: none;
+  color: #cc3333;
+  font-size: 9px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.hv-guide-chip-del:hover { background: #ffeaea; }
+.hv-guide-select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 5px 6px;
+  border: 1px solid #d0e8f0;
+  border-radius: 4px;
+  color: #003344;
+  background: #fff;
+  font-family: Arial, sans-serif;
+}
+
 @media (max-width: 640px) {
-  .hv-topbar { padding: 10px 14px; gap: 10px; }
+  .hv-topbar { padding: 10px 14px; gap: 10px; flex-wrap: wrap; }
   .hv-logo   { height: 28px; }
   .hv-subtitle { font-size: 13px; }
   .hv-content  { padding: 14px 12px 30px; gap: 20px; }
   .hv-cards    { grid-template-columns: 1fr; }
+  .hv-search-wrap { order: 3; flex-basis: 100%; max-width: none; margin: 4px 0 0; }
 }
 
 /* ── Behavior prompt ── */
@@ -1712,8 +1776,10 @@ body.client-view .meta-section select {
   cursor: default;
 }
 
-/* Hide overview button for clients — sidebar nav is their navigation */
-body.client-view #btn-overview { display: none; }
+/* Hide overview button for clients only — their sidebar list is their navigation.
+   Guides also get .client-view's read-only restrictions above, but they browse
+   via the same staff-style Overview page as staff, so they still need this button. */
+body.client-only-view #btn-overview { display: none; }
 
 /* ── Client sidebar — flat behavior list with domain buttons ── */
 .client-behavior-group {

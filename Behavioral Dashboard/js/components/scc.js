@@ -8,10 +8,11 @@
  */
 
 class SCCChart {
-  constructor(canvasId, tooltipId) {
+  constructor(canvasId, tooltipId, notePopupId = 'note-popup') {
     this.canvas  = document.getElementById(canvasId);
     this.ctx     = this.canvas.getContext('2d');
     this.tooltip = document.getElementById(tooltipId);
+    this._notePopupId = notePopupId; // defaults to the real dashboard's — pass a distinct id for any other chart instance sharing the page
     this.points  = [];
     this.chartType   = 'daily';
     this.aggregation = 'geomean';
@@ -23,6 +24,22 @@ class SCCChart {
     this._celerationLineHits  = [];
     this.aimLow               = null;
     this.aimHigh         = null;
+
+    // Only ever toggled false by OverlayView (for its own primary+overlay
+    // rendering); the real per-behavior dashboard chart always leaves these true.
+    this.showTrendlines = true;
+    this.showPhaseLines = true;
+
+    this.overlays      = []; // up to 3: { behaviorId, domainId, label, rawPoints, ownMeta, style }
+    this.overlayAlign   = 'relative'; // 'relative' | 'calendar'
+    // Per-overlay-slot color triple — dot/x/aim are all deliberately distinct
+    // from each other (not just shape) and stay distinct from the primary's
+    // green/red/yellow and from the other overlay slots.
+    this.OVERLAY_PALETTE = [
+      { dot: '#8e44ad', x: '#e67e22', aim: '#c2185b' }, // purple / orange / magenta
+      { dot: '#2980b9', x: '#f1c40f', aim: '#00acc1' }, // blue / gold / cyan
+      { dot: '#16a085', x: '#8e5b3f', aim: '#5c6bc0' }, // teal / brown / indigo
+    ];
 
     this.meta = {
       organization: '', supervisor: '', counter: '',
@@ -57,6 +74,7 @@ class SCCChart {
     // Regression line colours
     this.C_REG_DOT = '#009933';
     this.C_REG_X   = '#cc0000';
+    this.C_AIM     = '#f5c500';
 
     this._applyTypeConfig();
     this._bindTooltip();
@@ -534,11 +552,15 @@ class SCCChart {
     this._drawAimBand();
     this._drawFloorTicks();
     this._drawPoints();
-    const reg = this._computeRegressions();
-    this._drawRegressionLines(reg);
+    let reg = { dot: { m: null, n: 0 }, x: { m: null, n: 0 } };
+    if (this.showTrendlines) {
+      reg = this._computeRegressions();
+      this._drawRegressionLines(reg);
+    }
     this._updateSlopeBox(reg);
     this._drawNoteCarets();
     this._updateLegend();
+    this.drawOverlays();
     this.afterDraw?.();
   }
 
@@ -580,23 +602,31 @@ class SCCChart {
     this.draw();
   }
 
+  _hexToRgba(hex, alpha) {
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
+    if (!m) return `rgba(245, 197, 0, ${alpha})`;
+    const [r, g, b] = m.slice(1).map(h => parseInt(h, 16));
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
   _drawAimBand() {
     const { aimLow, aimHigh } = this;
     if (!aimLow && !aimHigh) return;
     const { ctx } = this;
+    const color = this.C_AIM || '#f5c500';
     ctx.save();
 
     if (aimLow && aimHigh) {
       const yTop    = Math.max(this.PT, this.yP(Math.max(aimLow, aimHigh)));
       const yBottom = Math.min(this.PT + this.cH, this.yP(Math.min(aimLow, aimHigh)));
       if (yBottom > yTop) {
-        ctx.fillStyle = 'rgba(245, 197, 0, 0.15)';
+        ctx.fillStyle = this._hexToRgba(color, 0.15);
         ctx.fillRect(this.PL, yTop, this.cW, yBottom - yTop);
       }
       [aimLow, aimHigh].forEach(rate => {
         const y = this.yP(rate);
         if (y < this.PT || y > this.PT + this.cH) return;
-        ctx.strokeStyle = '#f5c500';
+        ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
         ctx.setLineDash([6, 4]);
         ctx.beginPath();
@@ -607,7 +637,7 @@ class SCCChart {
       ctx.setLineDash([]);
       const yMid = (this.yP(aimLow) + this.yP(aimHigh)) / 2;
       if (yMid >= this.PT && yMid <= this.PT + this.cH) {
-        ctx.fillStyle = '#9a7a00';
+        ctx.fillStyle = color;
         ctx.font = 'bold 9px Arial,sans-serif';
         ctx.textAlign = 'right';
         ctx.fillText('AIM', this.PL - 24, yMid + 3.5);
@@ -616,19 +646,98 @@ class SCCChart {
       const rate = aimLow || aimHigh;
       const y = this.yP(rate);
       if (y >= this.PT && y <= this.PT + this.cH) {
-        ctx.strokeStyle = '#f5c500';
+        ctx.strokeStyle = color;
         ctx.lineWidth = 2.5;
         ctx.beginPath();
         ctx.moveTo(this.PL, y);
         ctx.lineTo(this.PL + this.cW, y);
         ctx.stroke();
-        ctx.fillStyle = '#9a7a00';
+        ctx.fillStyle = color;
         ctx.font = 'bold 9px Arial,sans-serif';
         ctx.textAlign = 'right';
         ctx.fillText('AIM', this.PL - 24, y + 3.5);
       }
     }
     ctx.restore();
+  }
+
+  // ── Overlay charts ────────────────────────────────────────────────────────
+  // Draws up to 3 comparison charts on top of the primary chart, semi-transparent.
+  // Reuses the primary chart's own bucketing/regression/marker-drawing code by
+  // temporarily swapping in each overlay's data, then restoring the primary state —
+  // this keeps overlay columns aligned with whatever chartType/aggregation the
+  // primary chart is currently displaying.
+
+  drawOverlays() {
+    const active = this.overlays.filter(Boolean);
+    if (!active.length) return;
+    const primaryStartDate = this._startDate();
+    const { ctx } = this;
+
+    const snapshot = {
+      points: this.points,
+      dotColor: this.meta.dotColor, dotShape: this.meta.dotShape,
+      xColor: this.meta.xColor,     xShape: this.meta.xShape,
+      aimLow: this.aimLow, aimHigh: this.aimHigh,
+      C_REG_DOT: this.C_REG_DOT, C_REG_X: this.C_REG_X, C_AIM: this.C_AIM,
+      showPhaseLines: this.showPhaseLines,
+      plottableCache: this._plottableCache,
+      timingGroups: this._timingGroups,
+      noteCarets: this._noteCarets,
+      celerationLineHits: this._celerationLineHits,
+    };
+
+    active.forEach(ov => {
+      let pts = ov.rawPoints;
+      if (this.overlayAlign === 'calendar') {
+        const ovStart = ov.ownMeta?.startDate ? new Date(ov.ownMeta.startDate) : null;
+        if (ovStart && !isNaN(ovStart) && primaryStartDate) {
+          const offset = Math.floor((ovStart - primaryStartDate) / 86400000);
+          pts = pts.map(p => ({ ...p, day: p.day + offset }));
+        }
+      }
+
+      this.points = pts;
+      this._plottableCache = null;
+      this.meta.dotColor = ov.style.dotColor;
+      this.meta.dotShape = ov.style.dotShape;
+      this.meta.xColor   = ov.style.xColor;
+      this.meta.xShape   = ov.style.xShape;
+      this.C_REG_DOT = ov.style.trendDotColor;
+      this.C_REG_X   = ov.style.trendXColor;
+      this.C_AIM     = ov.style.aimColor;
+      const aimLo = ov.ownMeta?.aim_low  != null ? parseFloat(ov.ownMeta.aim_low)  : NaN;
+      const aimHi = ov.ownMeta?.aim_high != null ? parseFloat(ov.ownMeta.aim_high) : NaN;
+      this.aimLow  = ov.style.showAimBand && !isNaN(aimLo) ? aimLo : null;
+      this.aimHigh = ov.style.showAimBand && !isNaN(aimHi) ? aimHi : null;
+      this.showPhaseLines = !!ov.style.showPhaseLines;
+
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      this._drawAimBand();
+      this._drawPoints();
+      if (ov.style.showTrendlines) {
+        const reg = this._computeRegressions();
+        this._drawRegressionLines(reg);
+      }
+      ctx.restore();
+    });
+
+    this.points = snapshot.points;
+    this.meta.dotColor = snapshot.dotColor;
+    this.meta.dotShape = snapshot.dotShape;
+    this.meta.xColor   = snapshot.xColor;
+    this.meta.xShape   = snapshot.xShape;
+    this.aimLow  = snapshot.aimLow;
+    this.aimHigh = snapshot.aimHigh;
+    this.C_REG_DOT = snapshot.C_REG_DOT;
+    this.C_REG_X   = snapshot.C_REG_X;
+    this.C_AIM     = snapshot.C_AIM;
+    this.showPhaseLines     = snapshot.showPhaseLines;
+    this._plottableCache     = snapshot.plottableCache;
+    this._timingGroups       = snapshot.timingGroups;
+    this._noteCarets         = snapshot.noteCarets;
+    this._celerationLineHits = snapshot.celerationLineHits;
   }
 
   // ── Right Y-axis (Counting Times) ────────────────────────────────────────
@@ -1063,6 +1172,7 @@ class SCCChart {
 
     pts.forEach(p => {
       if (this._isLineType(p.type)) {
+        if (!this.showPhaseLines) return;
         const dashed = p.type === 'intervention';
         if (dashed) {
           // white halo so dashes pop against grid lines
@@ -1184,7 +1294,7 @@ class SCCChart {
     this.canvas.addEventListener('mouseleave', () => { this.tooltip.style.display = 'none'; this.canvas.style.cursor = ''; });
     this.canvas.addEventListener('click',      e => this._onCanvasClick(e));
     document.addEventListener('click', e => {
-      const popup = document.getElementById('note-popup');
+      const popup = document.getElementById(this._notePopupId);
       if (popup && !popup.classList.contains('hidden') &&
           !popup.contains(e.target) && e.target !== this.canvas) {
         this._hideNotePopup();
@@ -1371,7 +1481,7 @@ class SCCChart {
   }
 
   _showNotePopup(pts, localX, localY) {
-    const popup = document.getElementById('note-popup');
+    const popup = document.getElementById(this._notePopupId);
     if (!popup) return;
 
     const sd = this._startDate();
@@ -1393,11 +1503,12 @@ class SCCChart {
         <div class="note-popup-text">&ldquo;${p.note}&rdquo;</div>
       </div>`).join('');
 
+    const closeId = `${this._notePopupId}-close`;
     popup.innerHTML = `
-      <button class="note-popup-close" id="note-popup-close">&times;</button>
+      <button class="note-popup-close" id="${closeId}">&times;</button>
       ${entries}`;
 
-    document.getElementById('note-popup-close').addEventListener('click', e => {
+    document.getElementById(closeId).addEventListener('click', e => {
       e.stopPropagation(); this._hideNotePopup();
     });
 
@@ -1411,24 +1522,8 @@ class SCCChart {
   }
 
   _hideNotePopup() {
-    const popup = document.getElementById('note-popup');
+    const popup = document.getElementById(this._notePopupId);
     if (popup) popup.classList.add('hidden');
   }
 
-  // ── CSV export ────────────────────────────────────────────────────────────
-
-  exportCSV(domainName) {
-    const colHeader = { timings: 'Measurement', daily: 'Day', weekly: 'Week', monthly: 'Month', count_per_day: 'Day' }[this.chartType] || 'Day';
-    const valHeader = this.chartType === 'count_per_day' ? 'Count' : 'Count/Min';
-    const rows = [['Type', colHeader, valHeader, 'Note']];
-    [...this.points].sort((a, b) => a.day - b.day).forEach(p => {
-      rows.push([p.type, p.day, p.val ?? '', p.note ?? '']);
-    });
-    const csv  = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(blob);
-    a.download = `scc-${domainName.replace(/\s+/g, '-').toLowerCase()}.csv`;
-    a.click();
-  }
 }

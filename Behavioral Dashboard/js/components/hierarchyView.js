@@ -14,6 +14,7 @@ class HierarchyView {
     this._content      = document.getElementById('hv-content');
     this._domains      = [];
     this._eventsBound  = false;
+    document.getElementById('hv-search')?.addEventListener('input', () => this._applySearchFilter());
   }
 
   async show() {
@@ -21,7 +22,10 @@ class HierarchyView {
     this._content.innerHTML = '<p class="hv-loading">Loading&#8230;</p>';
     try {
       this._domains = await DB.domains.getAll();
-      if (DB.auth.isStaff()) {
+      if (DB.auth.isStaff() || DB.auth.isGuide()) {
+        // Guides reuse the staff-style tree — RLS scopes teams/participants/behaviors
+        // to only what they've been granted, and canEdit-gating below hides the
+        // add/edit affordances for them.
         await this._renderStaff();
       } else {
         await this._renderParticipant();
@@ -55,13 +59,25 @@ class HierarchyView {
   // ── Staff rendering ─────────────────────────────────────────────────────
 
   async _renderStaff() {
+    const canEdit  = DB.auth.isStaff();      // false for Guides — read-only viewers of their assigned participants
+    const isSuper  = DB.auth.isSupervisor(); // guide assignment is supervisor-only
     const [teams, participants, behaviors] = await Promise.all([
       DB.teams.getAll(), DB.participants.getAll(), DB.behaviors.getAll()
     ]);
     let allNotifEmails = [];
-    try { allNotifEmails = (await DB.notifications.getAll()) || []; } catch (_) { /* table not yet created */ }
+    let allGuides = [], allGuideAssignments = [];
+    if (canEdit) {
+      try { allNotifEmails = (await DB.notifications.getAll()) || []; } catch (_) { /* table not yet created */ }
+    }
+    if (isSuper) {
+      try {
+        [allGuides, allGuideAssignments] = await Promise.all([
+          DB.guides.getAll(), DB.guides.getAllAssignments()
+        ]);
+      } catch (_) { /* guide-role-migration.sql not yet run */ }
+    }
 
-    const byTeam = {}, byPart = {}, notifByPart = {};
+    const byTeam = {}, byPart = {}, notifByPart = {}, guidesByPart = {};
     participants.forEach(p => {
       if (!byTeam[p.team_id]) byTeam[p.team_id] = [];
       byTeam[p.team_id].push(p);
@@ -74,36 +90,87 @@ class HierarchyView {
       if (!notifByPart[n.participant_id]) notifByPart[n.participant_id] = [];
       notifByPart[n.participant_id].push(n);
     });
+    allGuideAssignments.forEach(g => {
+      if (!guidesByPart[g.participant_id]) guidesByPart[g.participant_id] = [];
+      guidesByPart[g.participant_id].push({ guideUserId: g.guide_user_id, email: g.profiles?.email || '' });
+    });
 
     if (!teams.length) {
       this._content.innerHTML = `
         <div class="hv-empty">
-          <p class="hv-empty-msg">No teams yet.</p>
-          ${DB.auth.isSupervisor() ? this._addTeamHTML() : ''}
-          <button class="hv-demo-btn" id="hv-btn-demo">Load demo hierarchy</button>
+          <p class="hv-empty-msg">${canEdit ? 'No teams yet.' : 'No clients assigned yet — contact your supervisor.'}</p>
+          ${isSuper ? this._addTeamHTML() : ''}
+          ${canEdit ? '<button class="hv-demo-btn" id="hv-btn-demo">Load demo hierarchy</button>' : ''}
         </div>`;
       document.getElementById('hv-btn-demo')?.addEventListener('click', () => this._loadDemo());
       this._bindEvents();
       return;
     }
 
-    this._notifByPart = notifByPart;
+    this._notifByPart  = notifByPart;
+    this._canEdit      = canEdit;
+    this._isSuper      = isSuper;
+    this._allGuides    = allGuides;
     this._content.innerHTML =
-      teams.map(team => this._teamHTML(team, byTeam[team.id] || [], byPart, notifByPart)).join('') +
+      teams.map(team => this._teamHTML(team, byTeam[team.id] || [], byPart, notifByPart, guidesByPart)).join('') +
       this._supervisorPanelHTML() +
-      `<div class="hv-footer-actions">
+      (canEdit ? `<div class="hv-footer-actions">
         <button class="hv-demo-btn-sm" id="hv-btn-demo">Load demo hierarchy</button>
-      </div>`;
+      </div>` : '');
 
     document.getElementById('hv-btn-demo')?.addEventListener('click', () => this._loadDemo());
     this._bindEvents();
+    this._applySearchFilter();
+  }
+
+  // ── Search ───────────────────────────────────────────────────────────────
+
+  _applySearchFilter() {
+    const input = document.getElementById('hv-search');
+    const q = (input?.value || '').trim().toLowerCase();
+    const teamSections = this._content.querySelectorAll('.hv-team');
+    let anyVisible = false;
+
+    teamSections.forEach(teamEl => {
+      const teamName = (teamEl.querySelector('.hv-team-name')?.textContent || '').toLowerCase();
+      const teamMatches = !q || teamName.includes(q);
+      let anyCardVisible = false;
+
+      teamEl.querySelectorAll('.hv-card').forEach(cardEl => {
+        let cardMatches = !q || teamMatches;
+        if (!cardMatches) {
+          const pname = (cardEl.querySelector('.hv-card-name')?.textContent || '').toLowerCase();
+          const behaviorNames = [...cardEl.querySelectorAll('.hv-behavior-name')].map(el => el.textContent.toLowerCase());
+          cardMatches = pname.includes(q) || behaviorNames.some(n => n.includes(q));
+        }
+        cardEl.style.display = cardMatches ? '' : 'none';
+        if (cardMatches) anyCardVisible = true;
+      });
+
+      const teamVisible = !q || teamMatches || anyCardVisible;
+      teamEl.style.display = teamVisible ? '' : 'none';
+      if (teamVisible) anyVisible = true;
+    });
+
+    let emptyMsg = document.getElementById('hv-search-empty');
+    if (q && !anyVisible) {
+      if (!emptyMsg) {
+        emptyMsg = document.createElement('p');
+        emptyMsg.id = 'hv-search-empty';
+        emptyMsg.className = 'hv-search-empty';
+        this._content.insertBefore(emptyMsg, this._content.firstChild);
+      }
+      emptyMsg.textContent = `No matches for "${input.value.trim()}".`;
+    } else {
+      emptyMsg?.remove();
+    }
   }
 
   // ── HTML builders ────────────────────────────────────────────────────────
 
-  _teamHTML(team, participants, byPart, notifByPart = {}) {
+  _teamHTML(team, participants, byPart, notifByPart = {}, guidesByPart = {}) {
     const cards = participants.map(p =>
-      this._participantCard(p, byPart[p.id] || [], team.name, notifByPart[p.id] || [])
+      this._participantCard(p, byPart[p.id] || [], team.name, notifByPart[p.id] || [], guidesByPart[p.id] || [])
     ).join('');
     const addPart = DB.auth.isSupervisor() ? `
       <div class="hv-add-participant-row">
@@ -123,7 +190,9 @@ class HierarchyView {
       </section>`;
   }
 
-  _participantCard(p, behaviors, teamName, notifEmails = []) {
+  _participantCard(p, behaviors, teamName, notifEmails = [], guides = []) {
+    const canEdit = DB.auth.isStaff();
+    const isSuper = DB.auth.isSupervisor();
     const behaviorRows = behaviors.map(b => this._behaviorRow(b, p, teamName)).join('');
     const notifRows = notifEmails.map(n => `
       <div class="hv-pnotif-row" data-nid="${n.id}">
@@ -131,9 +200,8 @@ class HierarchyView {
         ${n.label ? `<span class="hv-notify-label-tag">${_hvEsc(n.label)}</span>` : ''}
         <button class="hv-notify-del" data-nid="${n.id}" title="Remove">&#10005;</button>
       </div>`).join('');
-    return `
-      <div class="hv-card">
-        <div class="hv-card-name">${_hvEsc(p.name)}</div>
+
+    const clientEmailRow = canEdit ? `
         <div class="hv-client-email-row">
           <label class="hv-client-email-label">Client login emails</label>
           <input class="hv-client-email-input" type="email"
@@ -141,7 +209,9 @@ class HierarchyView {
                  value="${_hvEsc(p.email || '')}"
                  data-pid="${_hvEsc(p.id)}"
                  data-orig="${_hvEsc(p.email || '')}">
-        </div>
+        </div>` : '';
+
+    const notifSection = canEdit ? `
         <div class="hv-client-email-row">
           <label class="hv-client-email-label">Goal notification emails</label>
           <div class="hv-pnotif-list" id="hv-pnotif-${_hvEsc(p.id)}">
@@ -154,18 +224,54 @@ class HierarchyView {
                    placeholder="Label (optional)" data-pid="${_hvEsc(p.id)}">
             <button class="hv-add-btn hv-pnotif-add-btn" data-pid="${_hvEsc(p.id)}">+</button>
           </div>
-        </div>
+        </div>` : '';
+
+    const guideSection = isSuper ? this._guideSectionHTML(p, guides) : '';
+
+    const addBehaviorRow = canEdit ? `
+        <div class="hv-add-row">
+          <input class="hv-add-input hv-addbeh-input" type="text" placeholder="Add behavior&#8230;"
+                 data-pid="${_hvEsc(p.id)}" data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}">
+          <button class="hv-add-btn hv-addbeh-btn"
+                  data-pid="${_hvEsc(p.id)}" data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}">+</button>
+        </div>` : '';
+
+    return `
+      <div class="hv-card">
+        <div class="hv-card-name">${_hvEsc(p.name)}</div>
+        ${clientEmailRow}
+        ${notifSection}
+        ${guideSection}
         <div class="hv-behaviors" id="hv-behs-${p.id}">
           ${behaviorRows}
           ${!behaviors.length ? '<p class="hv-no-behaviors">No behaviors yet.</p>' : ''}
         </div>
-        <div class="hv-add-row">
-          <input class="hv-add-input" type="text" placeholder="Add behavior&#8230;"
-                 data-pid="${_hvEsc(p.id)}" data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}">
-          <button class="hv-add-btn"
-                  data-pid="${_hvEsc(p.id)}" data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}">+</button>
-        </div>
+        ${addBehaviorRow}
       </div>`;
+  }
+
+  _guideSectionHTML(p, guides) {
+    const assignedIds = new Set(guides.map(g => g.guideUserId));
+    const chips = guides.map(g => `
+      <span class="hv-guide-chip" data-pid="${_hvEsc(p.id)}" data-gid="${_hvEsc(g.guideUserId)}">
+        ${_hvEsc(g.email)}
+        <button class="hv-guide-chip-del" data-pid="${_hvEsc(p.id)}" data-gid="${_hvEsc(g.guideUserId)}" title="Remove access">&#10005;</button>
+      </span>`).join('');
+    const available = (this._allGuides || []).filter(g => !assignedIds.has(g.id));
+    const options = ['<option value="">Choose a guide…</option>']
+      .concat(available.map(g => `<option value="${_hvEsc(g.id)}">${_hvEsc(g.email)}</option>`)).join('');
+
+    return `
+        <div class="hv-client-email-row">
+          <label class="hv-client-email-label">Guides with access</label>
+          <div class="hv-guide-chips" id="hv-guides-${_hvEsc(p.id)}">
+            ${chips || '<p class="hv-notify-empty">No guides assigned.</p>'}
+          </div>
+          <div class="hv-pnotif-add-row">
+            <select class="hv-guide-select" data-pid="${_hvEsc(p.id)}">${options}</select>
+            <button class="hv-add-btn hv-guide-add-btn" data-pid="${_hvEsc(p.id)}">+</button>
+          </div>
+        </div>`;
   }
 
   _behaviorRow(b, p, teamName) {
@@ -276,10 +382,17 @@ class HierarchyView {
       const delBeh = e.target.closest('.hv-del-beh');
       if (delBeh) { this._confirmDeleteBehavior(delBeh.dataset.bid, delBeh.dataset.bname); return; }
 
-      // Add behavior — button has data-pid
-      const addBehBtn = e.target.closest('.hv-add-btn[data-pid]');
+      const guideAddBtn = e.target.closest('.hv-guide-add-btn');
+      if (guideAddBtn) { this._addGuideToParticipant(guideAddBtn.dataset.pid); return; }
+
+      const guideDelBtn = e.target.closest('.hv-guide-chip-del');
+      if (guideDelBtn) { this._removeGuideFromParticipant(guideDelBtn.dataset.pid, guideDelBtn.dataset.gid); return; }
+
+      // Add behavior — a dedicated class (not just .hv-add-btn[data-pid], which the
+      // notification and guide "+" buttons also carry and would otherwise collide with)
+      const addBehBtn = e.target.closest('.hv-addbeh-btn');
       if (addBehBtn) {
-        const input = this._content.querySelector(`.hv-add-input[data-pid="${addBehBtn.dataset.pid}"]`);
+        const input = this._content.querySelector(`.hv-addbeh-input[data-pid="${addBehBtn.dataset.pid}"]`);
         if (input) this._addBehavior(addBehBtn, input);
         return;
       }
@@ -320,10 +433,10 @@ class HierarchyView {
       const notifInput = e.target.closest('.hv-pnotif-email-input, .hv-pnotif-label-input');
       if (notifInput) { this._addParticipantNotif(notifInput.dataset.pid); return; }
 
-      // Behavior input (must come after notif check — shares hv-add-input + data-pid)
-      const behInput = e.target.closest('.hv-add-input[data-pid]');
+      // Behavior input — dedicated class, see the click handler's comment above
+      const behInput = e.target.closest('.hv-addbeh-input');
       if (behInput) {
-        const btn = this._content.querySelector(`.hv-add-btn[data-pid="${behInput.dataset.pid}"]`);
+        const btn = this._content.querySelector(`.hv-addbeh-btn[data-pid="${behInput.dataset.pid}"]`);
         if (btn) this._addBehavior(btn, behInput);
         return;
       }
@@ -384,6 +497,7 @@ class HierarchyView {
         container.insertAdjacentHTML('beforeend', this._behaviorRow(b, { id: pid, name: pname }, tname));
       }
       input.value = '';
+      this._applySearchFilter();
     } catch (err) {
       alert('Could not add behavior: ' + err.message);
     } finally {
@@ -405,6 +519,7 @@ class HierarchyView {
         container.insertAdjacentHTML('beforeend', this._participantCard(p, [], tname));
       }
       nameEl.value = '';
+      this._applySearchFilter();
     } catch (err) {
       alert('Could not add participant: ' + err.message);
     } finally {
@@ -427,6 +542,7 @@ class HierarchyView {
       panel ? panel.insertAdjacentHTML('beforebegin', html)
             : this._content.insertAdjacentHTML('beforeend', html);
       if (input) input.value = '';
+      this._applySearchFilter();
     } catch (err) {
       alert('Could not add team: ' + err.message);
     } finally {
@@ -507,6 +623,48 @@ class HierarchyView {
       }
     } catch (err) {
       alert('Could not remove: ' + err.message);
+    }
+  }
+
+  async _addGuideToParticipant(pid) {
+    const sel = this._content.querySelector(`.hv-guide-select[data-pid="${pid}"]`);
+    const guideUserId = sel?.value;
+    if (!guideUserId) { sel?.focus(); return; }
+    const guide = (this._allGuides || []).find(g => String(g.id) === String(guideUserId));
+    try {
+      await DB.guides.assign(pid, guideUserId);
+      const list = document.getElementById(`hv-guides-${pid}`);
+      if (list) {
+        list.querySelector('.hv-notify-empty')?.remove();
+        list.insertAdjacentHTML('beforeend', `
+          <span class="hv-guide-chip" data-pid="${_hvEsc(pid)}" data-gid="${_hvEsc(guideUserId)}">
+            ${_hvEsc(guide?.email || '')}
+            <button class="hv-guide-chip-del" data-pid="${_hvEsc(pid)}" data-gid="${_hvEsc(guideUserId)}" title="Remove access">&#10005;</button>
+          </span>`);
+      }
+      sel.querySelector(`option[value="${guideUserId}"]`)?.remove();
+      sel.value = '';
+    } catch (err) {
+      alert('Could not add guide: ' + err.message);
+    }
+  }
+
+  async _removeGuideFromParticipant(pid, guideUserId) {
+    try {
+      await DB.guides.unassign(pid, guideUserId);
+      const chip = this._content.querySelector(`.hv-guide-chip[data-pid="${pid}"][data-gid="${guideUserId}"]`);
+      const list = chip?.closest('.hv-guide-chips');
+      chip?.remove();
+      if (list && !list.querySelector('.hv-guide-chip')) {
+        list.innerHTML = '<p class="hv-notify-empty">No guides assigned.</p>';
+      }
+      const sel = this._content.querySelector(`.hv-guide-select[data-pid="${pid}"]`);
+      const guide = (this._allGuides || []).find(g => String(g.id) === String(guideUserId));
+      if (sel && guide) {
+        sel.insertAdjacentHTML('beforeend', `<option value="${_hvEsc(guide.id)}">${_hvEsc(guide.email)}</option>`);
+      }
+    } catch (err) {
+      alert('Could not remove guide: ' + err.message);
     }
   }
 

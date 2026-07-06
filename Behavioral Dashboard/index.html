@@ -4,13 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Team ABA — Behavioral Performance Dashboard</title>
-  <link rel="stylesheet" href="css/main.css">
-  <link rel="stylesheet" href="css/scc.css">
-  <link rel="stylesheet" href="css/login.css">
+  <link rel="stylesheet" href="css/main.css?v=25">
+  <link rel="stylesheet" href="css/scc.css?v=25">
+  <link rel="stylesheet" href="css/login.css?v=25">
 </head>
 <body>
   <div id="login-overlay" class="hidden"></div>
   <div id="invite-overlay" class="hidden"></div>
+  <div id="overlay-modal-overlay" class="hidden"></div>
+  <div id="export-report-modal-overlay" class="hidden"></div>
   <div id="inactivity-overlay" class="hidden">
     <div class="login-card inactivity-card">
       <h2 class="inactivity-title">Session Expiring</h2>
@@ -28,11 +30,54 @@
         <div class="hv-eyebrow">Standard Celeration Chart</div>
         <div class="hv-subtitle">Select a behavior to analyze</div>
       </div>
+      <div class="hv-search-wrap">
+        <input type="search" id="hv-search" class="hv-search-input" placeholder="Search teams, clients, behaviors&#8230;">
+      </div>
       <div class="hv-user-area" id="hv-user-badge"></div>
     </header>
     <div class="hv-content" id="hv-content">
       <p class="hv-loading">Loading&#8230;</p>
     </div>
+  </div>
+
+  <!-- Full-screen overlay comparison view — read-only, view/export only, no data entry -->
+  <div id="overlay-view" class="hv-overlay hidden">
+    <header class="hv-topbar">
+      <img src="img/logo.png" alt="Team ABA" class="hv-logo">
+      <div>
+        <div class="hv-eyebrow">Overlay Comparison</div>
+        <div class="hv-subtitle" id="overlay-view-title">&nbsp;</div>
+      </div>
+      <div class="hv-user-area">
+        <button class="hv-manage-btn" id="overlay-view-export">Export Image</button>
+        <button class="hv-signout-btn" id="overlay-view-back">&#8592; Back to Overview</button>
+      </div>
+    </header>
+    <div class="hv-content">
+      <section class="chart-section">
+        <div class="chart-header">
+          <div class="chart-controls">
+            <button class="btn-chart-scroll" id="ov-scroll-left" title="Scroll back">&#8592;</button>
+            <button class="btn-chart-scroll" id="ov-scroll-home" title="Reset to start">&#8635;</button>
+            <button class="btn-chart-scroll" id="ov-scroll-right" title="Scroll forward">&#8594;</button>
+          </div>
+          <div id="overlay-view-legend" class="legend-box"></div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="overlay-view-canvas"></canvas>
+          <div class="scc-tooltip" id="overlay-view-tooltip"></div>
+          <div class="note-popup hidden" id="overlay-view-note-popup"></div>
+        </div>
+      </section>
+
+      <section class="overlay-style-section" id="overlay-style-section"></section>
+    </div>
+  </div>
+
+  <!-- Hidden render surface for PDF report generation — never shown on screen -->
+  <div id="report-render-wrap" style="display:none;">
+    <canvas id="report-render-canvas"></canvas>
+    <div id="report-render-tooltip"></div>
   </div>
 
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
@@ -59,7 +104,6 @@
         </div>
         <div class="topbar-right">
           <span class="user-badge" id="user-badge"></span>
-          <button class="btn-outline" id="btn-export">Export CSV</button>
         </div>
       </header>
 
@@ -335,16 +379,20 @@
     </main>
   </div>
 
-  <script src="js/db.js?v=3"></script>
-  <script src="js/utils/inactivityMonitor.js?v=3"></script>
-  <script src="js/utils/goalsManager.js?v=3"></script>
-  <script src="js/components/login.js?v=3"></script>
-  <script src="js/components/invite.js?v=3"></script>
-  <script src="js/components/scc.js?v=3"></script>
-  <script src="js/components/hierarchyView.js?v=3"></script>
-  <script src="js/components/navTree.js?v=3"></script>
-  <script src="js/components/dashboard.js?v=3"></script>
-  <script src="js/app.js?v=3"></script>
+  <script src="js/db.js?v=25"></script>
+  <script src="js/utils/inactivityMonitor.js?v=25"></script>
+  <script src="js/utils/goalsManager.js?v=25"></script>
+  <script src="js/components/login.js?v=25"></script>
+  <script src="js/components/invite.js?v=25"></script>
+  <script src="js/components/scc.js?v=25"></script>
+  <script src="js/components/hierarchyView.js?v=25"></script>
+  <script src="js/components/navTree.js?v=25"></script>
+  <script src="js/components/dashboard.js?v=25"></script>
+  <script src="js/components/overlayView.js?v=25"></script>
+  <script src="js/components/overlayModal.js?v=25"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="js/components/exportReportModal.js?v=25"></script>
+  <script src="js/app.js?v=25"></script>
   <div class="marker-popup hidden" id="marker-popup">
     <div class="marker-popup-header">
       <span class="marker-popup-title" id="marker-popup-title"></span>
