@@ -121,12 +121,28 @@
   padding: 12px;
 }
 
+/* ── Overlay Comparison view: per-overlay style cards ── */
+.overlay-style-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.overlay-style-section:empty { display: none; }
+
+.overlay-style-card {
+  background: #fff;
+  border: 1px solid #d0e8f0;
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+
 .chart-wrap {
   position: relative;
   width: 100%;
 }
 
-#scc-canvas {
+#scc-canvas,
+#overlay-view-canvas {
   display: block;
   width: 100%;
   height: auto;

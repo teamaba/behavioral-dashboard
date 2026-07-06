@@ -37,15 +37,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     appRoot.style.display = '';
     window.dashboard.activate(behaviorId, domainSlug, context);
   }
+  window.showHierarchyView = showHierarchy; // exposed so OverlayView's "Back" button can return here
 
   document.getElementById('btn-overview')
     .addEventListener('click', showHierarchy);
 
   // ── Boot (called after successful auth) ──────────────────────────────
   function boot() {
-    if (DB.auth.isClient()) document.body.classList.add('client-view');
+    if (DB.auth.isClient() || DB.auth.isGuide()) document.body.classList.add('client-view');
+    // Only real clients get the flat sidebar nav instead of the Overview page —
+    // Guides need "← Overview" to get back to their staff-style hierarchy view.
+    if (DB.auth.isClient()) document.body.classList.add('client-only-view');
     window.dashboard = new Dashboard();
     window.hierarchyView = new HierarchyView(showChart);
+    window.overlayView = new OverlayView();
+    window.overlayModal = new OverlayModal(window.dashboard, window.overlayView);
+    window.exportReportModal = new ExportReportModal();
     _renderUserBadge();
     window.inactivityMonitor = new InactivityMonitor(async () => {
       await DB.auth.signOut();
@@ -64,18 +71,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   function _renderUserBadge() {
     const profile = DB.auth.getProfile();
 
-    // Badge in the chart topbar
+    // Badge in the chart topbar — same button styling/set as the hierarchy topbar
     const badge = document.getElementById('user-badge');
     if (badge) {
       if (profile) {
         badge.innerHTML = `
           <span class="topbar-user-email">${profile.email}</span>
           <span class="role-tag">${profile.role}</span>
-          ${DB.auth.isSupervisor() ? '<button class="btn-outline topbar-action-btn" id="btn-invite">Manage users</button>' : ''}
-          <button class="btn-outline topbar-action-btn" id="btn-signout">Sign out</button>
+          ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="btn-overlay">Overlay Charts</button>' : ''}
+          ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="btn-report">Export Report</button>' : ''}
+          <button class="hv-manage-btn" id="btn-export-image">Export Image</button>
+          ${DB.auth.isSupervisor() ? '<button class="hv-manage-btn" id="btn-invite">Manage users</button>' : ''}
+          <button class="hv-signout-btn" id="btn-signout">Sign out</button>
         `;
         const inviteBtn = document.getElementById('btn-invite');
         if (inviteBtn) inviteBtn.addEventListener('click', () => window.inviteModal.show());
+        const overlayBtn = document.getElementById('btn-overlay');
+        if (overlayBtn) overlayBtn.addEventListener('click', () => window.overlayModal.show());
+        const reportBtn = document.getElementById('btn-report');
+        if (reportBtn) reportBtn.addEventListener('click', () => window.exportReportModal.show());
+        const exportImageBtn = document.getElementById('btn-export-image');
+        if (exportImageBtn) exportImageBtn.addEventListener('click', () => window.dashboard._exportChartImage());
         document.getElementById('btn-signout').addEventListener('click', async () => {
           await DB.auth.signOut();
           location.reload();
@@ -91,6 +107,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       hvBadge.innerHTML = `
         <span class="hv-user-email">${profile.email}</span>
         <span class="role-tag">${profile.role}</span>
+        ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="hv-btn-overlay">Overlay Charts</button>' : ''}
+        ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="hv-btn-report">Export Report</button>' : ''}
         ${DB.auth.isSupervisor() ? '<button class="hv-manage-btn" id="hv-btn-invite">Manage users</button>' : ''}
         <button class="hv-signout-btn" id="hv-btn-signout">Sign out</button>
       `;
@@ -100,6 +118,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       const hvInvite = document.getElementById('hv-btn-invite');
       if (hvInvite) hvInvite.addEventListener('click', () => window.inviteModal.show());
+      const hvOverlay = document.getElementById('hv-btn-overlay');
+      if (hvOverlay) hvOverlay.addEventListener('click', () => window.overlayModal.show());
+      const hvReport = document.getElementById('hv-btn-report');
+      if (hvReport) hvReport.addEventListener('click', () => window.exportReportModal.show());
     }
   }
 

@@ -153,16 +153,6 @@
   color: #005580;
   text-transform: capitalize;
 }
-.user-badge button {
-  font-size: 11px;
-  color: #0099cc;
-  background: none;
-  border: none;
-  cursor: pointer;
-  text-decoration: underline;
-  font-family: Arial, sans-serif;
-}
-
 /* ── Invite modal overlay ── */
 #invite-overlay {
   position: fixed;
@@ -288,6 +278,173 @@
   width: 100%;
 }
 .invite-select:focus { border-color: #007faa; background: #fff; }
+
+/* ── Overlay charts modal ── */
+#overlay-modal-overlay,
+#export-report-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 51, 68, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 600;
+  padding: 24px;
+}
+#overlay-modal-overlay.hidden,
+#export-report-modal-overlay.hidden { display: none; }
+
+.overlay-modal-card {
+  position: relative;
+  max-width: 640px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.overlay-primary-section {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #d0e8f0;
+}
+.overlay-primary-section .manage-section-label { margin-bottom: 8px; }
+
+.overlay-align-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.overlay-align-row .manage-section-label { margin-bottom: 0; white-space: nowrap; }
+.overlay-align-row .invite-select { width: auto; flex: 1; }
+
+.overlay-slot {
+  border: 1px solid #d0e8f0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.overlay-slot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.overlay-slot-title {
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #0099cc;
+}
+.overlay-slot-remove {
+  font-size: 10px;
+  color: #cc3333;
+  background: none;
+  border: 1px solid #e8c0c0;
+  border-radius: 3px;
+  padding: 2px 7px;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+}
+.overlay-slot-remove:hover { background: #ffeaea; border-color: #cc3333; }
+
+.overlay-slot-selects {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.overlay-slot-selects .invite-select { font-size: 12px; padding: 6px 8px; }
+
+.overlay-style-panel {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #d0e8f0;
+}
+.overlay-style-label {
+  font-size: 11px;
+  color: #003344;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+.overlay-style-primary-tag {
+  font-size: 9px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #0099cc;
+  background: #e0f4ff;
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-left: 4px;
+}
+.overlay-style-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.overlay-style-col {
+  flex: 1;
+  min-width: 100px;
+}
+.overlay-color-input {
+  display: block;
+  width: 100%;
+  height: 26px;
+  border: 1px solid #d0e8f0;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px;
+  margin-bottom: 6px;
+  box-sizing: border-box;
+}
+.overlay-shape-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+.overlay-shape-grid .marker-shape-btn { height: 26px; font-size: 12px; }
+
+.overlay-checkbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: #003344;
+}
+.overlay-checkbox-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+
+.overlay-modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.overlay-modal-actions .overlay-view-btn { margin-top: 0; flex: 1; }
+
+/* ── Export Progress Report modal ── */
+.report-athlete-selects {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.report-athlete-selects .invite-select { font-size: 12px; padding: 6px 8px; }
+
+.report-skill-checks {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid #d0e8f0;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-top: 6px;
+}
+.report-skill-check-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #003344;
+  padding: 3px 0;
+  cursor: pointer;
+}
 
 /* ── Inactivity warning modal ── */
 #inactivity-overlay {
