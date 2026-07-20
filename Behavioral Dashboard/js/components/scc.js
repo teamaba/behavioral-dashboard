@@ -583,6 +583,7 @@ class SCCChart {
     const level  = sorted.length
       ? Math.pow(10, sorted.reduce((s, p) => s + Math.log10(p.val), 0) / sorted.length)
       : null;
+    const latestDotVal = sorted.length ? sorted[0].val : null;
 
     const { cel: dotCel, bounce: dotBounce } = regAndStats(dotPts);
     const tgt      = parseFloat(this.meta.acceltarget);
@@ -591,7 +592,7 @@ class SCCChart {
     const phases    = this.points.filter(p => this._isLineType(p.type)).sort((a, b) => b.day - a.day);
     const condition = phases.length ? (phases[0].note || null) : null;
 
-    return { level, dotCeleration: dotCel, dotBounce, impIndex, condition };
+    return { level, dotCeleration: dotCel, dotBounce, impIndex, condition, latestDotVal };
   }
 
   // ── Fluency aim band ─────────────────────────────────────────────────────
@@ -784,7 +785,14 @@ class SCCChart {
 
   _drawFloorTicks() {
     if (this.chartType === 'count_per_day') return;
-    const pts = this._getPlottablePoints().filter(p => p.floor && p.floor > 0 && !this._isLineType(p.type));
+    const pts = this._getPlottablePoints().filter(p => {
+      if (!p.floor || p.floor <= 0 || this._isLineType(p.type)) return false;
+      // Skip when the tick would land exactly on the point itself (a single-count
+      // entry, e.g. duration/latency timing entries) — it adds no information there,
+      // only value for multi-count entries where the floor differs from the rate.
+      const floorRate = 60 / p.floor;
+      return Math.abs(p.val - floorRate) > floorRate * 1e-6;
+    });
     if (!pts.length) return;
     const { ctx } = this;
     ctx.save();

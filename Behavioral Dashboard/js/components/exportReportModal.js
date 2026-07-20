@@ -209,9 +209,10 @@ class ExportReportModal {
   }
 
   async _renderSection(skill, domain) {
-    const [rawPoints, meta] = await Promise.all([
+    const [rawPoints, meta, goals] = await Promise.all([
       DB.points.get(skill.id, domain.id),
       DB.meta.get(skill.id, domain.id),
+      DB.goals.get(skill.id, domain.id).catch(() => []),
     ]);
     if (!rawPoints || !rawPoints.length) return null;
 
@@ -243,7 +244,7 @@ class ExportReportModal {
     const imgData = canvas.toDataURL('image/png');
     const stats = c.getStats();
 
-    return { skillName: skill.name, domainName: domain.name, imgData, stats, meta: c.meta };
+    return { skillName: skill.name, domainName: domain.name, imgData, stats, meta: c.meta, goals: goals || [] };
   }
 
   // ── PDF assembly ────────────────────────────────────────────────────────
@@ -268,6 +269,42 @@ class ExportReportModal {
       this._logoDataUrl = null;
     }
     return this._logoDataUrl;
+  }
+
+  _goalTypeLabel(type) {
+    return { acceleration: 'Acceleration', deceleration: 'Deceleration', count_per_min: 'Rate', bounce: 'Bounce', duration: 'Duration', latency: 'Latency' }[type] || type;
+  }
+
+  // Same m:ss formatting as GoalsManager._formatTime — duration/latency goals store
+  // their target in raw seconds regardless of how they're charted internally.
+  _formatGoalTime(sec) {
+    if (!sec) return '0:00';
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    const whole = Math.floor(s);
+    let sStr = String(whole).padStart(2, '0');
+    const frac = Math.round((s - whole) * 1000) / 1000;
+    if (frac > 0) {
+      let fracStr = frac.toFixed(3).slice(1).replace(/0+$/, '');
+      if (fracStr !== '.') sStr += fracStr;
+    }
+    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${sStr}`;
+    return `${m}:${sStr}`;
+  }
+
+  // Uses ASCII >=/<= rather than ≥/≤ — jsPDF's built-in fonts only support
+  // WinAnsi/Latin-1, which (unlike × and ÷) doesn't include those glyphs.
+  _goalTargetDisplay(goal) {
+    switch (goal.type) {
+      case 'acceleration':  return `>= ${goal.target}×/wk`;
+      case 'deceleration':  return `÷${goal.target}/wk`;
+      case 'count_per_min': return `>= ${goal.target} /min`;
+      case 'bounce':        return `<= ${goal.target}`;
+      case 'duration':      return `>= ${this._formatGoalTime(goal.target)}`;
+      case 'latency':       return `<= ${this._formatGoalTime(goal.target)}`;
+      default:              return `${goal.target}`;
+    }
   }
 
   _fmt(v) {
@@ -360,6 +397,16 @@ class ExportReportModal {
     sectionHeader('Program Overview');
     kv('Goal', meta.goal || '—');
     ty += 3;
+
+    const goals = section.goals || [];
+    if (goals.length) {
+      sectionHeader('Goals');
+      goals.forEach(g => {
+        const label = this._goalTargetDisplay(g) + (g.note ? ' — ' + g.note : '');
+        kv(this._goalTypeLabel(g.type), label);
+      });
+      ty += 3;
+    }
 
     sectionHeader('Legend');
     kv('Displayed Points', 'Daily');

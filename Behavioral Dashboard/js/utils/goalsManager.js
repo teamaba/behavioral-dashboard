@@ -16,7 +16,65 @@ class GoalsManager {
 
     this._section.classList.remove('hidden');
     this._bindEvents();
+    this._updateValueInputMode();
   }
+
+  // Duration/latency targets are entered as a time (m:ss) rather than a raw number.
+  _isTimeType(type) { return type === 'duration' || type === 'latency'; }
+
+  _updateValueInputMode() {
+    if (this._isTimeType(this._typeEl.value)) {
+      this._valueEl.type = 'text';
+      this._valueEl.placeholder = 'e.g. 0:30, 0:00.8, or 1:00:00';
+    } else {
+      this._valueEl.type = 'number';
+      this._valueEl.placeholder = 'e.g. 1.25';
+    }
+  }
+
+  // Accepts h:mm:ss, m:ss, or plain seconds — the last (seconds) segment may carry
+  // a decimal (e.g. 0:00.8) for sub-second latency precision; hours/minutes stay whole.
+  _parseTime(str) {
+    if (!str) return null;
+    const segs = str.split(':');
+    if (segs.length < 1 || segs.length > 3) return null;
+    const nums = segs.map((s, i) => i === segs.length - 1 ? parseFloat(s) : parseInt(s, 10));
+    if (nums.some(isNaN)) return null;
+    if (nums.length === 3) return nums[0] * 3600 + nums[1] * 60 + nums[2];
+    if (nums.length === 2) return nums[0] * 60 + nums[1];
+    return nums[0];
+  }
+
+  _formatTime(sec) {
+    if (!sec) return '0:00';
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    const sStr = this._formatSecPart(s);
+    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${sStr}`;
+    return `${m}:${sStr}`;
+  }
+
+  // Whole seconds pad to 2 digits as before ("05"); a fractional remainder is
+  // appended and trailing zeros are trimmed ("05.8").
+  _formatSecPart(sec) {
+    const whole = Math.floor(sec);
+    let str = String(whole).padStart(2, '0');
+    const frac = Math.round((sec - whole) * 1000) / 1000;
+    if (frac > 0) {
+      let fracStr = frac.toFixed(3).slice(1).replace(/0+$/, '');
+      if (fracStr !== '.') str += fracStr;
+    }
+    return str;
+  }
+
+  // Duration/latency goals are tracked via the existing rate-chart machinery: staff log
+  // 1 success with the floor set to the held/response time, giving val = 60/seconds.
+  // These two conversions are the ONLY place that trick lives — if we later back this
+  // with real duration/latency data instead, only these (plus the two cases below that
+  // call them) need to change.
+  _secondsToRate(sec) { return sec > 0 ? 60 / sec : null; }
+  _rateToSeconds(rate) { return rate ? 60 / rate : null; }
 
   // Called by Dashboard when a domain item is selected in the tree
   async setDomain(behaviorId, domainId, title, participantId, participantName, teamName) {
@@ -33,6 +91,7 @@ class GoalsManager {
   }
 
   _bindEvents() {
+    this._typeEl.addEventListener('change', () => this._updateValueInputMode());
     this._addBtn.addEventListener('click', () => this._addGoal());
     this._valueEl.addEventListener('keydown', e => {
       if (e.key === 'Enter') this._addGoal();
@@ -58,10 +117,11 @@ class GoalsManager {
 
   async _addGoal() {
     const type   = this._typeEl.value;
-    const target = parseFloat(this._valueEl.value);
+    const isTime = this._isTimeType(type);
+    const target = isTime ? this._parseTime(this._valueEl.value.trim()) : parseFloat(this._valueEl.value);
     const note   = this._noteEl?.value.trim() || '';
-    if (isNaN(target) || target <= 0) {
-      this._showFeedback('Enter a target value greater than 0.', 'error');
+    if (!target || isNaN(target) || target <= 0) {
+      this._showFeedback(isTime ? 'Enter a target time greater than 0 (e.g. 0:30 or 0:00.8).' : 'Enter a target value greater than 0.', 'error');
       return;
     }
     this._addBtn.disabled = true;
@@ -136,6 +196,15 @@ class GoalsManager {
         return stats.level != null && stats.level >= goal.target;
       case 'bounce':
         return stats.dotBounce != null && stats.dotBounce <= goal.target;
+      case 'duration':
+        // Checked against the single latest entry (not the rolling average like other
+        // goal types) — one qualifying hold is enough. Held time >= target seconds
+        // <=> rate (60/sec) <= 60/target
+        return stats.latestDotVal != null && stats.latestDotVal <= this._secondsToRate(goal.target);
+      case 'latency':
+        // Same single-entry logic as duration. Response time <= target seconds
+        // <=> rate (60/sec) >= 60/target
+        return stats.latestDotVal != null && stats.latestDotVal >= this._secondsToRate(goal.target);
       default:
         return false;
     }
@@ -163,7 +232,7 @@ class GoalsManager {
     if (!toEmails.length) return;
 
     try {
-      await DB.functions.invoke('send-goal-email', {
+      const result = await DB.functions.invoke('send-goal-email', {
         to_emails:        toEmails,
         participant_name: this._participantName || '',
         team_name:        this._teamName        || '',
@@ -172,13 +241,16 @@ class GoalsManager {
         actual_value:     actual,
         goal_note:        noteText
       });
+      if (result?.rejected?.length) {
+        this._showNoticeError('Email rejected for: ' + result.rejected.join(', '));
+      }
     } catch (err) {
       this._showNoticeError('Goal met but email failed to send: ' + err.message);
     }
   }
 
   _typeLabel(type) {
-    return { acceleration: 'Acceleration', deceleration: 'Deceleration', count_per_min: 'Rate', bounce: 'Bounce' }[type] || type;
+    return { acceleration: 'Acceleration', deceleration: 'Deceleration', count_per_min: 'Rate', bounce: 'Bounce', duration: 'Duration', latency: 'Latency' }[type] || type;
   }
 
   _targetDisplay(goal) {
@@ -187,6 +259,8 @@ class GoalsManager {
       case 'deceleration':  return `÷${goal.target}/wk`;
       case 'count_per_min': return `≥ ${goal.target} /min`;
       case 'bounce':        return `≤ ${goal.target}`;
+      case 'duration':      return `≥ ${this._formatTime(goal.target)}`;
+      case 'latency':       return `≤ ${this._formatTime(goal.target)}`;
       default:              return `${goal.target}`;
     }
   }
@@ -198,6 +272,11 @@ class GoalsManager {
       case 'deceleration':  return stats.dotCeleration ? `${fmt(stats.dotCeleration)}×/wk` : '—';
       case 'count_per_min': return stats.level          ? `${fmt(stats.level)} /min`             : '—';
       case 'bounce':        return stats.dotBounce       ? fmt(stats.dotBounce)                   : '—';
+      case 'duration':
+      case 'latency': {
+        const sec = this._rateToSeconds(stats.latestDotVal);
+        return sec != null ? this._formatTime(sec) : '—';
+      }
       default:              return '—';
     }
   }

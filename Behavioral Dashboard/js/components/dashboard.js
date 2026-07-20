@@ -41,7 +41,6 @@ class Dashboard {
     this._bindChartType();
     this._bindAggregation();
     this._bindAim();
-    this._bindDemo();
     this._applyAccessControl();
     this._showBehaviorPrompt();
   }
@@ -375,15 +374,11 @@ class Dashboard {
       });
     });
 
-    // Hide measurement fields when type is a line (phase or intervention)
-    document.getElementById('entry-type').addEventListener('change', e => {
-      const isLine = e.target.value === 'phase' || e.target.value === 'intervention';
-      ['entry-successes','entry-errors','entry-floor'].forEach(id => {
-        const el = document.getElementById(id);
-        el.closest('.field-group').style.opacity = isLine ? '0.4' : '1';
-        el.disabled = isLine;
-      });
-    });
+    // Hide measurement fields when type is a line (phase or intervention);
+    // lock successes to 1 and hide errors for duration/latency (single-trial timing entries)
+    document.getElementById('entry-type').addEventListener('change', e => this._applyEntryTypeMode(e.target.value));
+
+    this._applyEntryTypeMode(document.getElementById('entry-type').value);
 
     // Chart scroll controls
     document.getElementById('btn-scroll-left').addEventListener('click', () => {
@@ -397,6 +392,46 @@ class Dashboard {
     });
   }
 
+  // Duration/latency are single-trial timing entries: successes is always exactly
+  // 1 (this trial happened), there's no separate "errors" count, and the floor
+  // field holds the actual duration/latency observed rather than an observation window.
+  _isTimingType(type) { return type === 'duration' || type === 'latency'; }
+
+  _applyEntryTypeMode(type) {
+    const isLine   = type === 'phase' || type === 'intervention';
+    const isTiming = this._isTimingType(type);
+
+    const successesEl = document.getElementById('entry-successes');
+    const errorsEl     = document.getElementById('entry-errors');
+    const floorEl      = document.getElementById('entry-floor');
+    const successesLbl = document.getElementById('entry-successes-label');
+    const errorsGroup   = document.getElementById('entry-errors-group');
+    const floorLbl      = document.getElementById('entry-floor-label');
+
+    [successesEl, errorsEl, floorEl].forEach(el => {
+      el.closest('.field-group').style.opacity = isLine ? '0.4' : '1';
+      el.disabled = isLine;
+    });
+
+    if (isTiming) {
+      successesEl.value    = '1';
+      successesEl.disabled = true;
+      errorsEl.value       = '';
+      errorsEl.disabled    = true;
+      errorsGroup.style.opacity = '0.4';
+      successesLbl.textContent  = 'Trial';
+      floorLbl.textContent      = type === 'duration' ? 'Duration held (m:ss, m:ss.ms, or h:mm:ss)' : 'Latency (m:ss, m:ss.ms, or h:mm:ss)';
+      floorEl.placeholder       = 'e.g. 0:30 or 0:00.8';
+    } else if (!isLine) {
+      successesEl.disabled     = false;
+      errorsEl.disabled        = false;
+      errorsGroup.style.opacity = '1';
+      successesLbl.textContent  = 'Successes (●)';
+      floorLbl.textContent      = 'Floor (m:ss or h:mm:ss)';
+      floorEl.placeholder       = 'e.g. 0:30';
+    }
+  }
+
   _readLogForm() {
     const type    = document.getElementById('entry-type').value;
     const dateStr = document.getElementById('entry-date').value;
@@ -407,8 +442,12 @@ class Dashboard {
     }
     let successes = null, errors = null;
     if (!this.chart._isLineType(type)) {
-      const successCount = parseInt(document.getElementById('entry-successes').value, 10);
-      const errorCount   = parseInt(document.getElementById('entry-errors').value, 10);
+      const isTiming = this._isTimingType(type);
+      if (isTiming && this.chart.chartType === 'count_per_day') {
+        this._showFeedback('Duration/latency entries need a chart type other than "Count Per Day".', true); return null;
+      }
+      const successCount = isTiming ? 1   : parseInt(document.getElementById('entry-successes').value, 10);
+      const errorCount   = isTiming ? NaN : parseInt(document.getElementById('entry-errors').value, 10);
       const hasSuccesses = !isNaN(successCount) && successCount >= 0;
       const hasErrors    = !isNaN(errorCount)   && errorCount   >= 0;
       if (!hasSuccesses && !hasErrors) {
@@ -420,7 +459,7 @@ class Dashboard {
       } else {
         const floorSec = this._parseFloor(document.getElementById('entry-floor').value.trim());
         if (!floorSec || floorSec <= 0) {
-          this._showFeedback('Enter floor time (e.g. 0:30 or 1:00:00).', true); return null;
+          this._showFeedback('Enter floor time (e.g. 0:30, 0:00.8, or 1:00:00).', true); return null;
         }
         if (hasSuccesses) successes = { val: successCount * 60 / floorSec, floor: floorSec };
         if (hasErrors)    errors    = { val: errorCount   * 60 / floorSec, floor: floorSec };
@@ -466,6 +505,7 @@ class Dashboard {
       document.getElementById('entry-errors').value    = '';
       document.getElementById('entry-floor').value     = '';
       document.getElementById('entry-note').value      = '';
+      this._applyEntryTypeMode(type); // re-locks successes to 1 if still in duration/latency mode
       this._renderEntries();
       this._showFeedback('Added.');
       this.goalsManager?.checkGoals(this.chart);
@@ -551,7 +591,6 @@ class Dashboard {
     document.getElementById('btn-cancel-edit').classList.remove('hidden');
     document.getElementById('btn-undo').classList.add('hidden');
     document.getElementById('btn-clear').classList.add('hidden');
-    document.getElementById('btn-demo').classList.add('hidden');
     document.querySelector('.log-section').classList.add('log-section--editing');
     document.querySelector('.log-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
@@ -562,7 +601,6 @@ class Dashboard {
     document.getElementById('btn-cancel-edit').classList.add('hidden');
     document.getElementById('btn-undo').classList.remove('hidden');
     document.getElementById('btn-clear').classList.remove('hidden');
-    document.getElementById('btn-demo').classList.remove('hidden');
     document.querySelector('.log-section').classList.remove('log-section--editing');
     document.getElementById('entry-type').value = 'data';
     document.getElementById('entry-type').dispatchEvent(new Event('change'));
@@ -573,13 +611,17 @@ class Dashboard {
     document.getElementById('entry-note').value      = '';
   }
 
+  // Accepts h:mm:ss, m:ss, or plain seconds — the last (seconds) segment may carry
+  // a decimal (e.g. 0:00.8) for sub-second latency precision; hours/minutes stay whole.
   _parseFloor(str) {
     if (!str) return null;
-    const parts = str.split(':').map(s => parseInt(s, 10));
-    if (parts.some(isNaN) || parts.length < 1 || parts.length > 3) return null;
-    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-    if (parts.length === 2) return parts[0] * 60 + parts[1];
-    return parts[0];
+    const segs = str.split(':');
+    if (segs.length < 1 || segs.length > 3) return null;
+    const nums = segs.map((s, i) => i === segs.length - 1 ? parseFloat(s) : parseInt(s, 10));
+    if (nums.some(isNaN)) return null;
+    if (nums.length === 3) return nums[0] * 3600 + nums[1] * 60 + nums[2];
+    if (nums.length === 2) return nums[0] * 60 + nums[1];
+    return nums[0];
   }
 
   _formatFloor(sec) {
@@ -587,8 +629,22 @@ class Dashboard {
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
     const s = sec % 60;
-    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    return `${m}:${String(s).padStart(2,'0')}`;
+    const sStr = this._formatSecPart(s);
+    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${sStr}`;
+    return `${m}:${sStr}`;
+  }
+
+  // Whole seconds pad to 2 digits as before ("05"); a fractional remainder (from
+  // sub-second latency entries) is appended and trailing zeros are trimmed ("05.8").
+  _formatSecPart(sec) {
+    const whole = Math.floor(sec);
+    let str = String(whole).padStart(2, '0');
+    const frac = Math.round((sec - whole) * 1000) / 1000;
+    if (frac > 0) {
+      let fracStr = frac.toFixed(3).slice(1).replace(/0+$/, '');
+      if (fracStr !== '.') str += fracStr;
+    }
+    return str;
   }
 
   async _undo() {
@@ -703,100 +759,6 @@ class Dashboard {
     } finally {
       this._setLoading(false);
     }
-  }
-
-  // ── Demo data ─────────────────────────────────────────────────────────────
-
-  _bindDemo() {
-    const btn = document.getElementById('btn-demo');
-    if (!btn) return;
-    btn.addEventListener('click', () => this._loadDemo());
-  }
-
-  _loadDemo() {
-    if (this.chart.points.length && !confirm('Replace current data with demo data?')) return;
-
-    // Basketball dribble-control drill — consistent 10 s timing window throughout.
-    // Floor band sits at 6–12/min (60/10 to 120/10). Event counts vary to produce
-    // the same trajectory: acceleration in makes, deceleration in errors, with a
-    // phase-change dip and post-intervention recovery.
-    // val = events × 60 / 10 = events × 6 per minute
-    const F = 10;
-
-    // [day, events, note]
-    const dotRaw = [
-      [7,  2, 'Baseline session'],
-      [10, 2, ''],
-      [14, 2, ''],
-      [18, 2, ''],
-      [21, 3, ''],
-      [25, 3, ''],
-      [28, 4, ''],
-      // phase at 28 — defender tanks makes
-      [35, 2, 'First day with defender'],
-      [39, 3, ''],
-      [42, 3, ''],
-      [46, 4, ''],
-      // intervention at 49 — footwork drill accelerates recovery
-      [53, 5, 'Footwork clicking'],
-      [56, 6, ''],
-      [60, 7, ''],
-      [63, 8, ''],
-      [67, 9, ''],
-      [70, 10, ''],
-    ];
-    const errRaw = [
-      [7,  5, ''],
-      [14, 4, ''],
-      [21, 4, ''],
-      [25, 3, ''],
-      [28, 3, ''],
-      // defender spikes errors
-      [35, 5, 'Defender caused turnovers'],
-      [42, 4, ''],
-      [49, 3, ''],
-      [56, 3, ''],
-      [63, 2, ''],
-      [70, 2, ''],
-    ];
-
-    const mk = (type, day, val, note = '', floor = null) => ({
-      id: null, type, day, val, note, floor,
-      px: this.chart._isLineType(type) ? this.chart.xL(day) : this.chart.xP(day),
-      py: this.chart._isLineType(type) ? null : this.chart.yP(val)
-    });
-
-    this.chart.points = [
-      ...dotRaw.map(([day, ev, note]) => mk('dot', day, ev * 60 / F, note, F)),
-      ...errRaw.map(([day, ev, note]) => mk('x',   day, ev * 60 / F, note, F)),
-      mk('phase',        28, null, 'Defender introduced'),
-      mk('intervention', 49, null, 'Footwork drill added'),
-    ];
-
-    const demoMeta = {
-      startDate:    '2025-01-01',
-      organization: 'Team ABA',
-      supervisor:   'Coach D.',
-      environment:  'Practice Gym',
-      correct:      'Makes',
-      incorrect:    'Misses',
-      acceltarget:  '1.5',
-      deceltarget:  '1.3',
-    };
-    Object.entries(demoMeta).forEach(([key, val]) => {
-      const el = document.getElementById('meta-' + key.toLowerCase());
-      if (el) el.value = val;
-      if (key in this.chart.meta) this.chart.meta[key] = val;
-    });
-
-    const aimLowEl  = document.getElementById('aim-low');
-    const aimHighEl = document.getElementById('aim-high');
-    if (aimLowEl)  { aimLowEl.value  = '80';  this.chart.aimLow  = 80;  }
-    if (aimHighEl) { aimHighEl.value = '120'; this.chart.aimHigh = 120; }
-
-    this.chart.draw();
-    this._renderEntries();
-    this._showFeedback('Demo loaded — not saved to database.');
   }
 
   // ── Export ────────────────────────────────────────────────────────────────

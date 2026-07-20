@@ -45,14 +45,28 @@ serve(async (req: Request) => {
       ? `Goal Achieved — ${participant_name}: ${goal_desc}`
       : `Goal Achieved: ${goal_desc}`;
 
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: `"Team ABA" <${gmailUser}>`,
       to: recipients.join(', '),
       subject,
       html: buildHtml({ participant_name, team_name, domain, goal_desc, actual_value, goal_note }),
     });
 
-    return new Response(JSON.stringify({ ok: true, sent_to: recipients.length }), {
+    // sendMail resolves as long as the SMTP server accepted at least one
+    // recipient — a per-recipient rejection (bad address, refused by their
+    // mail server, etc.) doesn't throw, it just shows up in info.rejected.
+    // Surface that instead of discarding it, otherwise a partial failure
+    // looks identical to full success to the caller.
+    if (info.rejected && info.rejected.length) {
+      console.error('[send-goal-email] rejected recipients:', info.rejected);
+    }
+
+    return new Response(JSON.stringify({
+      ok: true,
+      sent_to: recipients.length,
+      accepted: info.accepted || [],
+      rejected: info.rejected || [],
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
