@@ -100,9 +100,7 @@ class HierarchyView {
         <div class="hv-empty">
           <p class="hv-empty-msg">${canEdit ? 'No teams yet.' : 'No clients assigned yet — contact your supervisor.'}</p>
           ${isSuper ? this._addTeamHTML() : ''}
-          ${canEdit ? '<button class="hv-demo-btn" id="hv-btn-demo">Load demo hierarchy</button>' : ''}
         </div>`;
-      document.getElementById('hv-btn-demo')?.addEventListener('click', () => this._loadDemo());
       this._bindEvents();
       return;
     }
@@ -113,12 +111,8 @@ class HierarchyView {
     this._allGuides    = allGuides;
     this._content.innerHTML =
       teams.map(team => this._teamHTML(team, byTeam[team.id] || [], byPart, notifByPart, guidesByPart)).join('') +
-      this._supervisorPanelHTML() +
-      (canEdit ? `<div class="hv-footer-actions">
-        <button class="hv-demo-btn-sm" id="hv-btn-demo">Load demo hierarchy</button>
-      </div>` : '');
+      this._supervisorPanelHTML();
 
-    document.getElementById('hv-btn-demo')?.addEventListener('click', () => this._loadDemo());
     this._bindEvents();
     this._applySearchFilter();
   }
@@ -145,6 +139,20 @@ class HierarchyView {
         }
         cardEl.style.display = cardMatches ? '' : 'none';
         if (cardMatches) anyCardVisible = true;
+
+        // While actively searching, auto-expand matching cards so results are
+        // visible without an extra click; collapse back once the query is cleared.
+        const body = cardEl.querySelector('.hv-body');
+        const chev = cardEl.querySelector('.hv-card-chev');
+        if (body) {
+          if (q && cardMatches) {
+            body.classList.remove('hidden');
+            if (chev) chev.innerHTML = '&#9660;';
+          } else if (!q) {
+            body.classList.add('hidden');
+            if (chev) chev.innerHTML = '&#9654;';
+          }
+        }
       });
 
       const teamVisible = !q || teamMatches || anyCardVisible;
@@ -236,17 +244,36 @@ class HierarchyView {
                   data-pid="${_hvEsc(p.id)}" data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}">+</button>
         </div>` : '';
 
+    const bodyId     = `hv-body-${_hvEsc(p.id)}`;
+    const chevId      = `hv-chev-${_hvEsc(p.id)}`;
+    const settingsId = `hv-settings-${_hvEsc(p.id)}`;
+    const hasSettings = canEdit || isSuper;
+
+    const gearBtn = hasSettings ? `
+        <button class="hv-gear-btn js-toggle" data-target="${settingsId}" title="Manage emails &amp; access">&#9881;</button>` : '';
+
+    const settingsPopover = hasSettings ? `
+        <div class="hv-settings-popover hidden" id="${settingsId}">
+          ${clientEmailRow}
+          ${notifSection}
+          ${guideSection}
+        </div>` : '';
+
     return `
       <div class="hv-card">
-        <div class="hv-card-name">${_hvEsc(p.name)}</div>
-        ${clientEmailRow}
-        ${notifSection}
-        ${guideSection}
-        <div class="hv-behaviors" id="hv-behs-${p.id}">
-          ${behaviorRows}
-          ${!behaviors.length ? '<p class="hv-no-behaviors">No behaviors yet.</p>' : ''}
+        <div class="hv-card-hdr js-toggle" data-target="${bodyId}" data-chev="${chevId}">
+          <span class="hv-card-chev" id="${chevId}">&#9654;</span>
+          <span class="hv-card-name">${_hvEsc(p.name)}</span>
+          ${gearBtn}
         </div>
-        ${addBehaviorRow}
+        ${settingsPopover}
+        <div class="hv-body hidden" id="${bodyId}">
+          <div class="hv-behaviors" id="hv-behs-${p.id}">
+            ${behaviorRows}
+            ${!behaviors.length ? '<p class="hv-no-behaviors">No behaviors yet.</p>' : ''}
+          </div>
+          ${addBehaviorRow}
+        </div>
       </div>`;
   }
 
@@ -306,25 +333,12 @@ class HierarchyView {
   }
 
   _supervisorPanelHTML() {
-    if (!DB.auth.isStaff()) return '';
+    if (!DB.auth.isSupervisor()) return '';
     return `
       <div class="hv-supervisor-panel">
-        ${DB.auth.isSupervisor() ? `<section class="hv-sup-section">
+        <section class="hv-sup-section">
           <h3 class="hv-sup-title">Add team</h3>
           ${this._addTeamHTML()}
-        </section>` : ''}
-        <section class="hv-sup-section hv-demo-tools">
-          <h3 class="hv-sup-title">Demo tools</h3>
-          <p class="hv-sup-desc">Shortcuts for demonstrating features — not visible to clients.</p>
-          <div class="hv-demo-tool-row">
-            <button class="hv-demo-tool-btn" id="hv-demo-timeout">Simulate session timeout warning</button>
-            <span class="hv-demo-tool-desc">Shows the inactivity countdown modal immediately.</span>
-          </div>
-          <div class="hv-demo-tool-row">
-            <input class="hv-add-input" type="email" id="hv-demo-email-addr" placeholder="Send test to this address…">
-            <button class="hv-demo-tool-btn" id="hv-demo-email">Send test goal email</button>
-          </div>
-          <p class="hv-demo-email-status hidden" id="hv-demo-email-status"></p>
         </section>
       </div>`;
   }
@@ -379,6 +393,9 @@ class HierarchyView {
       const domainBtn = e.target.closest('.hv-domain-btn');
       if (domainBtn) { this._selectDomain(domainBtn); return; }
 
+      const toggle = e.target.closest('.js-toggle');
+      if (toggle) { this._toggle(toggle); return; }
+
       const delBeh = e.target.closest('.hv-del-beh');
       if (delBeh) { this._confirmDeleteBehavior(delBeh.dataset.bid, delBeh.dataset.bname); return; }
 
@@ -407,8 +424,6 @@ class HierarchyView {
       }
 
       if (e.target.id === 'hv-add-team-btn')  { this._addTeam();     return; }
-      if (e.target.id === 'hv-demo-timeout') { window.inactivityMonitor?.triggerWarning(30 * 1000); return; }
-      if (e.target.id === 'hv-demo-email')   { this._sendTestEmail(); return; }
 
       const addNotifBtn = e.target.closest('.hv-pnotif-add-btn');
       if (addNotifBtn) { this._addParticipantNotif(addNotifBtn.dataset.pid); return; }
@@ -451,6 +466,15 @@ class HierarchyView {
 
       if (e.target.id === 'hv-add-team-input') { this._addTeam(); return; }
     });
+  }
+
+  _toggle(el) {
+    const body = document.getElementById(el.dataset.target);
+    const chev = el.dataset.chev ? document.getElementById(el.dataset.chev) : null;
+    if (!body) return;
+    const closing = !body.classList.contains('hidden');
+    body.classList.toggle('hidden');
+    if (chev) chev.innerHTML = closing ? '&#9654;' : '&#9660;';
   }
 
   _selectDomain(el) {
@@ -668,40 +692,6 @@ class HierarchyView {
     }
   }
 
-  async _sendTestEmail() {
-    const btn     = document.getElementById('hv-demo-email');
-    const addrEl  = document.getElementById('hv-demo-email-addr');
-    const status  = document.getElementById('hv-demo-email-status');
-    const email   = addrEl?.value.trim();
-
-    if (!email) { addrEl?.focus(); return; }
-    if (btn) btn.disabled = true;
-
-    const _show = (msg, isError) => {
-      if (!status) return;
-      status.textContent = msg;
-      status.className = 'hv-demo-email-status ' + (isError ? 'hv-demo-email-status--error' : 'hv-demo-email-status--ok');
-      status.classList.remove('hidden');
-    };
-
-    try {
-      await DB.functions.invoke('send-goal-email', {
-        to_emails:        [email],
-        participant_name: 'Demo Client',
-        team_name:        'Demo Team',
-        domain:           'Demo Behavior · Demo Domain',
-        goal_desc:        'Rate: ≥ 10 /min',
-        actual_value:     '12.4 /min',
-        goal_note:        'This is a test email from Team ABA demo tools.'
-      });
-      _show(`Test email sent to ${email}.`, false);
-    } catch (err) {
-      _show('Send failed: ' + err.message, true);
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  }
-
   async _confirmDeleteBehavior(behaviorId, behaviorName) {
     if (!confirm(`Remove "${behaviorName}" and all its data? This cannot be undone.`)) return;
     try {
@@ -712,22 +702,6 @@ class HierarchyView {
     }
   }
 
-  async _loadDemo() {
-    const teams = await DB.teams.getAll();
-    if (teams.some(t => t.name === 'Orlando Magic' || t.name === 'Sacramento Kings')) {
-      alert('Demo teams are already loaded.');
-      return;
-    }
-    const btn = document.getElementById('hv-btn-demo');
-    if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
-    try {
-      await DB.teams.seedDemo();
-      await this.show();
-    } catch (err) {
-      alert('Demo load failed: ' + err.message);
-      if (btn) { btn.disabled = false; btn.textContent = 'Load demo hierarchy'; }
-    }
-  }
 }
 
 function _hvEsc(str) {

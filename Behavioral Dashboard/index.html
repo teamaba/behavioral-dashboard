@@ -122,6 +122,8 @@
               <label for="entry-type">Type</label>
               <select id="entry-type">
                 <option value="data">● × Data entry</option>
+                <option value="duration">◷ Duration entry</option>
+                <option value="latency">◷ Latency entry</option>
                 <option value="phase">| Phase change (solid line)</option>
                 <option value="intervention">¦ Intervention (dashed line)</option>
               </select>
@@ -131,15 +133,15 @@
               <input type="date" id="entry-date">
             </div>
             <div class="field-group">
-              <label for="entry-successes">Successes (●)</label>
+              <label for="entry-successes" id="entry-successes-label">Successes (●)</label>
               <input type="number" id="entry-successes" min="0" step="1" placeholder="e.g. 17">
             </div>
-            <div class="field-group">
+            <div class="field-group" id="entry-errors-group">
               <label for="entry-errors">Errors (×)</label>
               <input type="number" id="entry-errors" min="0" step="1" placeholder="e.g. 20">
             </div>
             <div class="field-group">
-              <label for="entry-floor">Floor (m:ss or h:mm:ss)</label>
+              <label for="entry-floor" id="entry-floor-label">Floor (m:ss or h:mm:ss)</label>
               <input type="text" id="entry-floor" placeholder="e.g. 0:30">
             </div>
           </div>
@@ -162,7 +164,6 @@
             <button class="btn-outline hidden" id="btn-cancel-edit">Cancel edit</button>
             <button class="btn-outline" id="btn-undo">Undo last</button>
             <button class="btn-outline" id="btn-clear">Clear all</button>
-            <button class="btn-outline" id="btn-demo" style="color:#6a3d9a;border-color:#6a3d9a;">Load demo</button>
             <span class="log-feedback" id="log-feedback"></span>
           </div>
         </section>
@@ -283,6 +284,8 @@
                   <option value="acceleration">Acceleration (×/wk)</option>
                   <option value="deceleration">Deceleration (÷/wk)</option>
                   <option value="bounce">Bounce</option>
+                  <option value="duration">Duration (hold ≥ time)</option>
+                  <option value="latency">Latency (respond ≤ time)</option>
                 </select>
               </div>
               <div class="goals-field">

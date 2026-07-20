@@ -933,6 +933,8 @@ body {
 .goal-type-tag--deceleration  { background: #cc3333; }
 .goal-type-tag--bounce        { background: #6a3d9a; }
 .goal-type-tag--count_per_min { background: #0099cc; }
+.goal-type-tag--duration      { background: #cc7a00; }
+.goal-type-tag--latency       { background: #16a085; }
 
 .goal-target {
   font-size: 12px;
@@ -1130,9 +1132,9 @@ body {
 
 /* Participant cards row */
 .hv-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .hv-card {
@@ -1145,12 +1147,64 @@ body {
   gap: 12px;
 }
 
+.hv-card-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e8f4f8;
+  cursor: pointer;
+  margin: -2px -4px 0;
+  padding-left: 4px;
+  padding-right: 4px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.hv-card-hdr:hover { background: #f7fdff; }
+
+.hv-card-chev {
+  font-size: 9px;
+  color: #99c8d8;
+  flex-shrink: 0;
+  width: 10px;
+  display: inline-block;
+}
+
 .hv-card-name {
   font-size: 14px;
   font-weight: bold;
   color: #003344;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #e8f4f8;
+  flex: 1;
+}
+
+.hv-gear-btn {
+  background: none;
+  border: none;
+  font-size: 15px;
+  color: #99b8c4;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.hv-gear-btn:hover { background: #e8f4f8; color: #0099cc; }
+
+.hv-settings-popover {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px 20px;
+  align-items: start;
+  background: #f7fdff;
+  border: 1px solid #e0f0f6;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.hv-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 /* Client login email row */
@@ -1179,6 +1233,7 @@ body {
   background: #f7fdff;
   font-family: Arial, sans-serif;
   outline: none;
+  max-width: 280px;
   transition: border-color 0.15s, background 0.15s;
 }
 .hv-client-email-input:focus { border-color: #0099cc; }
@@ -1308,73 +1363,6 @@ body {
   gap: 16px;
   padding: 60px 20px;
 }
-
-.hv-demo-btn {
-  font-size: 13px;
-  padding: 10px 24px;
-  background: #fff;
-  color: #6a3d9a;
-  border: 1px solid #6a3d9a;
-  border-radius: 5px;
-  cursor: pointer;
-  font-family: Arial, sans-serif;
-}
-.hv-demo-btn:hover { background: #f5eeff; }
-
-.hv-footer-actions {
-  padding: 8px 0 4px;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.hv-demo-btn-sm {
-  font-size: 11px;
-  padding: 6px 14px;
-  background: #fff;
-  color: #6a3d9a;
-  border: 1px solid #6a3d9a;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: Arial, sans-serif;
-}
-.hv-demo-btn-sm:hover { background: #f5eeff; }
-
-/* ── Demo tools (supervisor only) ── */
-.hv-demo-tools { border-top: 1px dashed #d0e8f0; padding-top: 16px; }
-
-.hv-demo-tool-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.hv-demo-tool-btn {
-  font-size: 11px;
-  padding: 5px 12px;
-  background: #fff;
-  color: #6a3d9a;
-  border: 1px solid #6a3d9a;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: Arial, sans-serif;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.hv-demo-tool-btn:hover { background: #f5eeff; }
-
-.hv-demo-tool-desc {
-  font-size: 11px;
-  color: #99b8c4;
-}
-
-.hv-demo-email-status {
-  font-size: 11px;
-  margin-top: 4px;
-}
-.hv-demo-email-status--ok    { color: #00884a; }
-.hv-demo-email-status--error { color: #cc3333; }
-.hv-demo-email-status.hidden { display: none; }
 
 /* ── Add-participant row (supervisor only) ── */
 .hv-add-participant-row {
@@ -1571,7 +1559,6 @@ body {
   .hv-logo   { height: 28px; }
   .hv-subtitle { font-size: 13px; }
   .hv-content  { padding: 14px 12px 30px; gap: 20px; }
-  .hv-cards    { grid-template-columns: 1fr; }
   .hv-search-wrap { order: 3; flex-basis: 100%; max-width: none; margin: 4px 0 0; }
 }
 
