@@ -1252,6 +1252,31 @@ class SCCChart {
 
   _isLineType(type) { return type === 'phase' || type === 'intervention'; }
 
+  // A single-count entry (val === 60/floor, i.e. duration/latency timing entries)
+  // reads better as the time it represents than as a count/min rate — same test
+  // used to suppress the redundant record-floor tick for these points.
+  _isTimingPoint(p) {
+    if (!p.floor || p.floor <= 0) return false;
+    const floorRate = 60 / p.floor;
+    return Math.abs(p.val - floorRate) <= floorRate * 1e-6;
+  }
+
+  // Mirrors GoalsManager._formatTime/_formatSecPart — m:ss, with a trimmed
+  // decimal remainder for sub-second latency, or h:mm:ss for longer durations.
+  _formatTimingValue(sec) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    const whole = Math.floor(s);
+    let sStr = String(whole).padStart(2, '0');
+    const frac = Math.round((s - whole) * 1000) / 1000;
+    if (frac > 0) {
+      let fracStr = frac.toFixed(3).slice(1).replace(/0+$/, '');
+      if (fracStr !== '.') sStr += fracStr;
+    }
+    return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${sStr}` : `${m}:${sStr}`;
+  }
+
   addPoint({ type, day, val, note = '', floor = null }) {
     const px = this._isLineType(type) ? this.xL(day) : this.xP(day);
     const py = this._isLineType(type) ? null : this.yP(val);
@@ -1337,7 +1362,9 @@ class SCCChart {
 
     const dateStr = this._colToDateLabel(col);
     const nearbyValLabel = nearby
-      ? (this.chartType === 'count_per_day' ? Math.round(nearby.val) : `${fmt(nearby.val)}/min`) +
+      ? (this.chartType === 'count_per_day' ? Math.round(nearby.val)
+         : this._isTimingPoint(nearby) ? this._formatTimingValue(nearby.floor)
+         : `${fmt(nearby.val)}/min`) +
         (nearby.note ? ' — ' + nearby.note : '')
       : null;
     this.tooltip.textContent = nearbyValLabel !== null
@@ -1506,7 +1533,11 @@ class SCCChart {
       <div class="note-popup-entry">
         <div class="note-popup-point">
           <span class="note-popup-icon note-popup-icon--${p.type}">${p.type === 'dot' ? '●' : '×'}</span>
-          <span>${p.type === 'dot' ? 'Correct' : 'Error'} &middot; ${dayLabel(p)} &middot; ${this.chartType === 'count_per_day' ? Math.round(p.val) : `${fmt(p.val)}/min`}</span>
+          <span>${p.type === 'dot' ? 'Correct' : 'Error'} &middot; ${dayLabel(p)} &middot; ${
+            this.chartType === 'count_per_day' ? Math.round(p.val)
+            : this._isTimingPoint(p) ? this._formatTimingValue(p.floor)
+            : `${fmt(p.val)}/min`
+          }</span>
         </div>
         <div class="note-popup-text">&ldquo;${p.note}&rdquo;</div>
       </div>`).join('');
