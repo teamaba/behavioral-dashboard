@@ -1,7 +1,6 @@
 class GoalsManager {
   constructor() {
-    this._behaviorId  = null;
-    this._domainId    = null;
+    this._instanceId  = null;
     this._domainTitle = null;
     this._goals       = [];
 
@@ -76,10 +75,9 @@ class GoalsManager {
   _secondsToRate(sec) { return sec > 0 ? 60 / sec : null; }
   _rateToSeconds(rate) { return rate ? 60 / rate : null; }
 
-  // Called by Dashboard when a domain item is selected in the tree
-  async setDomain(behaviorId, domainId, title, participantId, participantName, teamName) {
-    this._behaviorId       = behaviorId;
-    this._domainId         = domainId;
+  // Called by Dashboard when a pinpoint chart instance is selected in the tree
+  async setInstance(instanceId, title, participantId, participantName, teamName) {
+    this._instanceId       = instanceId;
     this._domainTitle      = title;
     this._participantId    = participantId    || null;
     this._participantName  = participantName  || null;
@@ -106,9 +104,9 @@ class GoalsManager {
   }
 
   async _load() {
-    if (!this._behaviorId || !this._domainId) return;
+    if (!this._instanceId) return;
     try {
-      this._goals = (await DB.goals.get(this._behaviorId, this._domainId)) || [];
+      this._goals = (await DB.goals.get(this._instanceId)) || [];
       this._render();
     } catch (err) {
       console.error('[Goals] Load failed:', err);
@@ -126,7 +124,7 @@ class GoalsManager {
     }
     this._addBtn.disabled = true;
     try {
-      const goal = await DB.goals.add(this._behaviorId, this._domainId, { type, target, note });
+      const goal = await DB.goals.add(this._instanceId, { type, target, note });
       this._goals.push(goal);
       this._valueEl.value = '';
       if (this._noteEl) this._noteEl.value = '';
@@ -170,7 +168,7 @@ class GoalsManager {
 
   // Called by Dashboard after every successful data entry save
   async checkGoals(chart) {
-    if (!this._goals.length || !this._behaviorId) return;
+    if (!this._goals.length || !this._instanceId) return;
     const stats = chart.getStats();
     const met   = this._goals.filter(g => this._goalMet(g, stats));
     if (!met.length) return;

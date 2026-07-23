@@ -1672,9 +1672,11 @@ body {
 .tree-behavior-hdr:hover .tree-del { opacity: 1; }
 .tree-del:hover { background: #ffeaea; }
 
-/* Domain items */
-.tree-behavior .tree-body { padding-left: 22px; }
+/* Pinpoint chart instance items (leaf rows under a participant) */
 .tree-domain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: #336677;
   padding: 4px 10px;
@@ -1682,6 +1684,9 @@ body {
   cursor: pointer;
   transition: background 0.1s;
 }
+.tree-domain-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-domain .js-del-inst { opacity: 0; }
+.tree-domain:hover .js-del-inst { opacity: 1; }
 .tree-domain:hover { background: #e8f7fc; color: #005580; }
 .tree-domain--active {
   background: #d0f0fa;
@@ -1799,3 +1804,77 @@ body.client-only-view #btn-overview { display: none; }
 }
 .client-domain-btn:hover { background: #d8f2fc; color: #005580; border-color: #aadcf0; }
 .client-domain-btn.tree-domain--active { background: #0099cc; color: #fff; border-color: #0099cc; font-weight: bold; }
+
+/* ── Pinpoint chart rows on the hierarchy home page (flat — one per row) ── */
+.hv-behavior-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Pinpoints Library — category tree + pinpoint rows ── */
+.pl-category { margin-bottom: 4px; }
+.pl-category > .tree-hdr .tree-del { opacity: 0; }
+.pl-category > .tree-hdr:hover .tree-del { opacity: 1; }
+.pl-pinpoint-row { padding: 4px 10px 4px 22px; }
+.pl-pinpoint-type-tag {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6a3d9a;
+  background: #f5eeff;
+  border: 1px solid #ddc8f5;
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+/* ── Pinpoint form (create/edit) and View Pinpoint summary ──
+   (.pf-form-card's max-width override lives in login.css, after
+   .overlay-modal-card, since login.css loads after main.css) */
+.pf-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px 14px;
+  margin-bottom: 16px;
+}
+.pf-form-grid-full { grid-column: 1 / -1; }
+.pf-form-grid textarea {
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid #0099cc;
+  border-radius: 3px;
+  color: #003344;
+  background: #f7fdff;
+  font-family: Arial, sans-serif;
+  resize: vertical;
+}
+.pf-checkbox-group { justify-content: flex-end; }
+.pf-checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: normal;
+  text-transform: none;
+  color: #003344;
+  letter-spacing: normal;
+}
+.pf-summary { margin-bottom: 16px; }
+.pf-summary-title { color: #005580; margin: 0 0 12px; font-size: 18px; }
+.pf-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid #eef7fb;
+  font-size: 12px;
+}
+.pf-summary-label { color: #0099cc; font-weight: bold; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
+.pf-summary-val { color: #003344; text-align: right; }
+
+@media (max-width: 640px) {
+  .pf-form-grid { grid-template-columns: 1fr; }
+}

@@ -157,6 +157,9 @@ const DB = (() => {
     return rows[0];
   }
 
+  // Builds a small demo hierarchy exercising all 4 measurement types, so
+  // every pinpoint code path (frequency/duration/latency/count_per_day) has
+  // sample data to click through without hand-creating it first.
   async function seedDemoHierarchy() {
     const [magicRows, kingsRows] = await Promise.all([
       restRequest('/teams', { method: 'POST', body: JSON.stringify({ name: 'Orlando Magic' }) }),
@@ -173,14 +176,52 @@ const DB = (() => {
       restRequest('/participants', { method: 'POST', body: JSON.stringify({ team_id: kings.id, name: 'Domantas Sabonis' }) }),
     ]);
 
+    const categories = await getCategories();
+    const catBySlug = {};
+    categories.forEach(c => { if (c.slug) catBySlug[c.slug] = c; });
+
+    const [ballHandling, postMoveHold, doubleTeamReact, composureResets] = await Promise.all([
+      addPinpoint({
+        category_id: catBySlug.movement?.id || null, name: 'Ball Handling Reps',
+        description: 'Cone weave dribbling drill, count clean reps per timed set.',
+        measurement_type: 'frequency', has_neutral_field: false, include_record_ceiling: false,
+        default_counting_time: 60, goal_direction: 'acceleration',
+        correct_label: 'Clean rep', incorrect_label: 'Lost ball',
+        default_view: 'daily', default_point_display: 'geometric_mean',
+      }),
+      addPinpoint({
+        category_id: catBySlug.physical?.id || null, name: 'Post Move Hold',
+        description: 'Time how long a post-up seal is held under contact.',
+        measurement_type: 'duration', include_record_ceiling: false,
+        goal_direction: 'acceleration',
+        correct_label: 'Held seal', incorrect_label: '',
+        default_view: 'daily', default_point_display: 'geometric_mean',
+      }),
+      addPinpoint({
+        category_id: catBySlug.decision?.id || null, name: 'React to Double Team',
+        description: 'Time from double-team arrival to outlet pass release.',
+        measurement_type: 'latency', include_record_ceiling: false,
+        goal_direction: 'deceleration',
+        correct_label: 'Pass released', incorrect_label: '',
+        default_view: 'daily', default_point_display: 'geometric_mean',
+      }),
+      addPinpoint({
+        category_id: catBySlug.emotional?.id || null, name: 'Composure Resets',
+        description: 'Count of visible reset routines used after a bad-call or turnover.',
+        measurement_type: 'count_per_day', has_neutral_field: false, include_record_ceiling: false,
+        goal_direction: 'acceleration',
+        correct_label: 'Reset used', incorrect_label: '',
+        default_view: 'count_per_day', default_point_display: 'summative',
+      }),
+    ]);
+
     await Promise.all([
-      restRequest('/behaviors', { method: 'POST', body: JSON.stringify({ participant_id: banchero[0].id, name: 'Ball Handling',     created_by: currentUser?.id }) }),
-      restRequest('/behaviors', { method: 'POST', body: JSON.stringify({ participant_id: banchero[0].id, name: 'Post Moves',        created_by: currentUser?.id }) }),
-      restRequest('/behaviors', { method: 'POST', body: JSON.stringify({ participant_id: wagner[0].id,   name: 'Drive and Kick',    created_by: currentUser?.id }) }),
-      restRequest('/behaviors', { method: 'POST', body: JSON.stringify({ participant_id: suggs[0].id,    name: 'Press Defense',     created_by: currentUser?.id }) }),
-      restRequest('/behaviors', { method: 'POST', body: JSON.stringify({ participant_id: murray[0].id,   name: 'Corner Three',      created_by: currentUser?.id }) }),
-      restRequest('/behaviors', { method: 'POST', body: JSON.stringify({ participant_id: murray[0].id,   name: 'Off-Ball Movement', created_by: currentUser?.id }) }),
-      restRequest('/behaviors', { method: 'POST', body: JSON.stringify({ participant_id: sabonis[0].id,  name: 'Pick and Roll',     created_by: currentUser?.id }) }),
+      addParticipantPinpoint(banchero[0].id, ballHandling),
+      addParticipantPinpoint(banchero[0].id, postMoveHold),
+      addParticipantPinpoint(wagner[0].id,   doubleTeamReact),
+      addParticipantPinpoint(suggs[0].id,    composureResets),
+      addParticipantPinpoint(murray[0].id,   ballHandling),
+      addParticipantPinpoint(sabonis[0].id,  postMoveHold),
     ]);
   }
 
@@ -190,10 +231,13 @@ const DB = (() => {
     return restRequest('/participants?order=name.asc');
   }
 
-  async function addParticipant(teamId, name, email) {
+  async function addParticipant(teamId, name, email, age, gender) {
     const rows = await restRequest('/participants', {
       method: 'POST',
-      body: JSON.stringify({ team_id: teamId, name, email: email || null })
+      body: JSON.stringify({
+        team_id: teamId, name, email: email || null,
+        age: age || null, gender: gender || null
+      })
     });
     return rows[0];
   }
@@ -238,44 +282,125 @@ const DB = (() => {
     );
   }
 
-  // ── Behaviors ──────────────────────────────────────────────────────────
+  // ── Categories (open-ended, nestable — replaces the old fixed "domains") ─
 
-  async function getBehaviors(participantId) {
-    return restRequest(`/behaviors?participant_id=eq.${participantId}&order=created_at.asc`);
+  async function getCategories() {
+    return restRequest('/categories?order=name.asc');
   }
 
-  async function getAllBehaviors() {
-    return restRequest('/behaviors?order=participant_id.asc,created_at.asc');
-  }
-
-  async function addBehavior(participantId, name) {
-    const rows = await restRequest('/behaviors', {
+  async function addCategory(name, parentId) {
+    const rows = await restRequest('/categories', {
       method: 'POST',
-      body: JSON.stringify({ participant_id: participantId, name, created_by: currentUser?.id })
+      body: JSON.stringify({ name, parent_id: parentId || null, created_by: currentUser?.id })
     });
     return rows[0];
   }
 
-  async function deleteBehavior(id) {
-    return restRequest(`/behaviors?id=eq.${id}`, { method: 'DELETE' });
+  async function updateCategory(id, fields) {
+    return restRequest(`/categories?id=eq.${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields)
+    });
   }
 
-  // ── Domains ────────────────────────────────────────────────────────────
+  async function deleteCategory(id) {
+    return restRequest(`/categories?id=eq.${id}`, { method: 'DELETE' });
+  }
 
-  async function getDomains() {
-    return restRequest('/domains?order=name.asc');
+  // ── Pinpoints (reusable library templates, live inside a category) ──────
+
+  async function getPinpoints() {
+    return restRequest('/pinpoints?order=name.asc');
+  }
+
+  async function getPinpointsByCategory(categoryId) {
+    return restRequest(`/pinpoints?category_id=eq.${categoryId}&order=name.asc`);
+  }
+
+  async function getPinpoint(id) {
+    const rows = await restRequest(`/pinpoints?id=eq.${id}&limit=1`);
+    return rows && rows.length ? rows[0] : null;
+  }
+
+  async function addPinpoint(fields) {
+    const rows = await restRequest('/pinpoints', {
+      method: 'POST',
+      body: JSON.stringify({ ...fields, created_by: currentUser?.id })
+    });
+    return rows[0];
+  }
+
+  async function updatePinpoint(id, fields) {
+    return restRequest(`/pinpoints?id=eq.${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() })
+    });
+  }
+
+  async function deletePinpoint(id) {
+    return restRequest(`/pinpoints?id=eq.${id}`, { method: 'DELETE' });
+  }
+
+  // ── Participant Pinpoints (per-athlete chart instance) ───────────────────
+  // Copied from a library Pinpoint at creation time — editing the library
+  // template afterward never touches existing instances.
+
+  async function getParticipantPinpoints(participantId) {
+    return restRequest(`/participant_pinpoints?participant_id=eq.${participantId}&order=created_at.asc`);
+  }
+
+  async function getAllParticipantPinpoints() {
+    return restRequest('/participant_pinpoints?order=participant_id.asc,created_at.asc');
+  }
+
+  async function getOneParticipantPinpoint(id) {
+    const rows = await restRequest(`/participant_pinpoints?id=eq.${id}&limit=1`);
+    return rows && rows.length ? rows[0] : null;
+  }
+
+  // Pass either a pinpoint template object (its fields get copied) plus a
+  // participantId, or a fully-formed fields object with participant_id
+  // already set (for direct instance creation without a template).
+  async function addParticipantPinpoint(participantId, pinpointOrFields) {
+    const copyKeys = [
+      'name', 'description', 'measurement_type', 'has_neutral_field', 'include_record_ceiling',
+      'default_counting_time', 'goal_direction', 'target_min', 'target_max',
+      'correct_label', 'incorrect_label', 'neutral_label'
+    ];
+    const body = { participant_id: participantId, created_by: currentUser?.id };
+    if (pinpointOrFields?.id) body.pinpoint_id = pinpointOrFields.id;
+    copyKeys.forEach(k => { if (pinpointOrFields?.[k] !== undefined) body[k] = pinpointOrFields[k]; });
+    body.view          = pinpointOrFields?.default_view          || pinpointOrFields?.view          || 'daily';
+    body.point_display  = pinpointOrFields?.default_point_display || pinpointOrFields?.point_display  || 'geometric_mean';
+
+    const rows = await restRequest('/participant_pinpoints', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+    return rows[0];
+  }
+
+  async function updateParticipantPinpoint(id, fields) {
+    return restRequest(`/participant_pinpoints?id=eq.${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields)
+    });
+  }
+
+  async function deleteParticipantPinpoint(id) {
+    return restRequest(`/participant_pinpoints?id=eq.${id}`, { method: 'DELETE' });
   }
 
   // ── Data points ────────────────────────────────────────────────────────
 
-  async function getPoints(behaviorId, domainId) {
+  async function getPoints(instanceId) {
     return restRequest(
-      `/data_points?behavior_id=eq.${behaviorId}&domain_id=eq.${domainId}&order=day.asc,created_at.asc`
+      `/data_points?instance_id=eq.${instanceId}&order=day.asc,created_at.asc`
     );
   }
 
-  async function addPoint({ behavior_id, domain_id, type, day, val, note, floor }) {
-    const body = { behavior_id, domain_id, type, day, val: val ?? null, note: note || '' };
+  async function addPoint({ instance_id, type, day, val, note, floor }) {
+    const body = { instance_id, type, day, val: val ?? null, note: note || '' };
     if (floor != null) body.floor = floor;
     const rows = await restRequest('/data_points', {
       method: 'POST',
@@ -288,24 +413,19 @@ const DB = (() => {
     return restRequest(`/data_points?id=eq.${id}`, { method: 'DELETE' });
   }
 
-  async function clearPoints(behaviorId, domainId) {
-    return restRequest(
-      `/data_points?behavior_id=eq.${behaviorId}&domain_id=eq.${domainId}`,
-      { method: 'DELETE' }
-    );
+  async function clearPoints(instanceId) {
+    return restRequest(`/data_points?instance_id=eq.${instanceId}`, { method: 'DELETE' });
   }
 
   // ── Chart metadata ─────────────────────────────────────────────────────
 
-  async function getMeta(behaviorId, domainId) {
-    const rows = await restRequest(
-      `/chart_meta?behavior_id=eq.${behaviorId}&domain_id=eq.${domainId}&limit=1`
-    );
+  async function getMeta(instanceId) {
+    const rows = await restRequest(`/chart_meta?instance_id=eq.${instanceId}&limit=1`);
     return rows && rows.length ? rows[0] : null;
   }
 
-  async function upsertMeta(behaviorId, domainId, fields) {
-    const existing = await getMeta(behaviorId, domainId);
+  async function upsertMeta(instanceId, fields) {
+    const existing = await getMeta(instanceId);
     if (existing) {
       return restRequest(`/chart_meta?id=eq.${existing.id}`, {
         method: 'PATCH',
@@ -314,23 +434,23 @@ const DB = (() => {
     } else {
       return restRequest('/chart_meta', {
         method: 'POST',
-        body: JSON.stringify({ behavior_id: behaviorId, domain_id: domainId, ...fields })
+        body: JSON.stringify({ instance_id: instanceId, ...fields })
       });
     }
   }
 
   // ── Client goals ───────────────────────────────────────────────────────
 
-  async function getGoals(behaviorId, domainId) {
+  async function getGoals(instanceId) {
     return restRequest(
-      `/goals?behavior_id=eq.${behaviorId}&domain_id=eq.${domainId}&achieved=eq.false&order=created_at.asc`
+      `/goals?instance_id=eq.${instanceId}&achieved=eq.false&order=created_at.asc`
     );
   }
 
-  async function addGoal(behaviorId, domainId, { type, target, note }) {
+  async function addGoal(instanceId, { type, target, note }) {
     const rows = await restRequest('/goals', {
       method: 'POST',
-      body: JSON.stringify({ behavior_id: behaviorId, domain_id: domainId, type, target, note: note || null, created_by: currentUser?.id })
+      body: JSON.stringify({ instance_id: instanceId, type, target, note: note || null, created_by: currentUser?.id })
     });
     return rows[0];
   }
@@ -426,17 +546,21 @@ const DB = (() => {
       requestPasswordReset, updatePassword,
       getProfile, isStaff, isSupervisor, isClient, isGuide, isLoggedIn
     },
-    teams:         { getAll: getTeams, add: addTeam, seedDemo: seedDemoHierarchy },
-    participants:  { getAll: getParticipants, getSelf: getSelfParticipant, add: addParticipant, update: updateParticipant },
-    guides:        { getAll: getAllGuides, getAllAssignments: getAllGuideAssignments, assign: assignGuide, unassign: unassignGuide },
-    notifications: { getAll: getAllNotificationEmails, getForParticipant: getNotificationEmails, add: addNotificationEmail, delete: deleteNotificationEmail },
-    behaviors:    { get: getBehaviors, getAll: getAllBehaviors, add: addBehavior, delete: deleteBehavior },
-    domains:      { getAll: getDomains },
-    points:       { get: getPoints, add: addPoint, delete: deletePoint, clear: clearPoints },
-    meta:         { get: getMeta, upsert: upsertMeta },
-    goals:        { get: getGoals, add: addGoal, delete: deleteGoal, markAchieved: markGoalAchieved },
-    functions:    { invoke: invokeFunction },
-    invites:      { add: addAllowed },
-    users:        { getAll: getAllProfiles, update: updateUserProfile, remove: removeUser }
+    teams:              { getAll: getTeams, add: addTeam, seedDemo: seedDemoHierarchy },
+    participants:       { getAll: getParticipants, getSelf: getSelfParticipant, add: addParticipant, update: updateParticipant },
+    guides:             { getAll: getAllGuides, getAllAssignments: getAllGuideAssignments, assign: assignGuide, unassign: unassignGuide },
+    notifications:      { getAll: getAllNotificationEmails, getForParticipant: getNotificationEmails, add: addNotificationEmail, delete: deleteNotificationEmail },
+    categories:         { getAll: getCategories, add: addCategory, update: updateCategory, delete: deleteCategory },
+    pinpoints:          { getAll: getPinpoints, getByCategory: getPinpointsByCategory, get: getPinpoint, add: addPinpoint, update: updatePinpoint, delete: deletePinpoint },
+    participantPinpoints: {
+      getAll: getAllParticipantPinpoints, get: getParticipantPinpoints, getOne: getOneParticipantPinpoint,
+      add: addParticipantPinpoint, update: updateParticipantPinpoint, delete: deleteParticipantPinpoint
+    },
+    points:             { get: getPoints, add: addPoint, delete: deletePoint, clear: clearPoints },
+    meta:               { get: getMeta, upsert: upsertMeta },
+    goals:              { get: getGoals, add: addGoal, delete: deleteGoal, markAchieved: markGoalAchieved },
+    functions:          { invoke: invokeFunction },
+    invites:            { add: addAllowed },
+    users:              { getAll: getAllProfiles, update: updateUserProfile, remove: removeUser }
   };
 })();

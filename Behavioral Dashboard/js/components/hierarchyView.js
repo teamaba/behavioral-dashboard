@@ -1,10 +1,10 @@
 /**
  * hierarchyView.js — Full-screen hierarchy home page
- * Teams → Participants → Behaviors → Domain buttons (sorted by last access)
+ * Teams → Participants → Pinpoint chart instances (sorted by last access)
  *
  * Supervisors: add teams, add participants, manage notification list.
- * Staff:       add behaviors to existing participants.
- * Clients:     own behaviors only, read-only.
+ * Staff:       assign pinpoints to existing participants via Add Chart.
+ * Clients:     own pinpoint charts only, read-only.
  */
 
 class HierarchyView {
@@ -12,7 +12,6 @@ class HierarchyView {
     this._onSelect     = onSelect;
     this._el           = document.getElementById('hierarchy-view');
     this._content      = document.getElementById('hv-content');
-    this._domains      = [];
     this._eventsBound  = false;
     document.getElementById('hv-search')?.addEventListener('input', () => this._applySearchFilter());
   }
@@ -21,9 +20,8 @@ class HierarchyView {
     this._el.classList.remove('hidden');
     this._content.innerHTML = '<p class="hv-loading">Loading&#8230;</p>';
     try {
-      this._domains = await DB.domains.getAll();
       if (DB.auth.isStaff() || DB.auth.isGuide()) {
-        // Guides reuse the staff-style tree — RLS scopes teams/participants/behaviors
+        // Guides reuse the staff-style tree — RLS scopes teams/participants/instances
         // to only what they've been granted, and canEdit-gating below hides the
         // add/edit affordances for them.
         await this._renderStaff();
@@ -41,19 +39,17 @@ class HierarchyView {
 
   // ── Access tracking ─────────────────────────────────────────────────────
 
-  _getAccess(behaviorId, domainSlug) {
-    const v = localStorage.getItem(`bd_access:${behaviorId}:${domainSlug}`);
+  _getAccess(instanceId) {
+    const v = localStorage.getItem(`bd_access:${instanceId}`);
     return v ? parseInt(v, 10) : 0;
   }
 
-  recordAccess(behaviorId, domainSlug) {
-    localStorage.setItem(`bd_access:${behaviorId}:${domainSlug}`, Date.now().toString());
+  recordAccess(instanceId) {
+    localStorage.setItem(`bd_access:${instanceId}`, Date.now().toString());
   }
 
-  _sortedDomains(behaviorId) {
-    return [...this._domains].sort((a, b) =>
-      this._getAccess(behaviorId, b.slug) - this._getAccess(behaviorId, a.slug)
-    );
+  _sortedInstances(instances) {
+    return [...instances].sort((a, b) => this._getAccess(b.id) - this._getAccess(a.id));
   }
 
   // ── Staff rendering ─────────────────────────────────────────────────────
@@ -61,8 +57,8 @@ class HierarchyView {
   async _renderStaff() {
     const canEdit  = DB.auth.isStaff();      // false for Guides — read-only viewers of their assigned participants
     const isSuper  = DB.auth.isSupervisor(); // guide assignment is supervisor-only
-    const [teams, participants, behaviors] = await Promise.all([
-      DB.teams.getAll(), DB.participants.getAll(), DB.behaviors.getAll()
+    const [teams, participants, instances] = await Promise.all([
+      DB.teams.getAll(), DB.participants.getAll(), DB.participantPinpoints.getAll()
     ]);
     let allNotifEmails = [];
     let allGuides = [], allGuideAssignments = [];
@@ -82,9 +78,9 @@ class HierarchyView {
       if (!byTeam[p.team_id]) byTeam[p.team_id] = [];
       byTeam[p.team_id].push(p);
     });
-    behaviors.forEach(b => {
-      if (!byPart[b.participant_id]) byPart[b.participant_id] = [];
-      byPart[b.participant_id].push(b);
+    instances.forEach(i => {
+      if (!byPart[i.participant_id]) byPart[i.participant_id] = [];
+      byPart[i.participant_id].push(i);
     });
     allNotifEmails.forEach(n => {
       if (!notifByPart[n.participant_id]) notifByPart[n.participant_id] = [];
@@ -134,8 +130,8 @@ class HierarchyView {
         let cardMatches = !q || teamMatches;
         if (!cardMatches) {
           const pname = (cardEl.querySelector('.hv-card-name')?.textContent || '').toLowerCase();
-          const behaviorNames = [...cardEl.querySelectorAll('.hv-behavior-name')].map(el => el.textContent.toLowerCase());
-          cardMatches = pname.includes(q) || behaviorNames.some(n => n.includes(q));
+          const instanceNames = [...cardEl.querySelectorAll('.hv-domain-btn')].map(el => el.textContent.toLowerCase());
+          cardMatches = pname.includes(q) || instanceNames.some(n => n.includes(q));
         }
         cardEl.style.display = cardMatches ? '' : 'none';
         if (cardMatches) anyCardVisible = true;
@@ -185,6 +181,10 @@ class HierarchyView {
         <input class="hv-add-input hv-add-part-name" type="text"
                placeholder="Participant name&#8230;"
                data-tid="${_hvEsc(team.id)}" data-tname="${_hvEsc(team.name)}">
+        <input class="hv-add-input hv-add-part-age" type="number" min="0" step="1"
+               placeholder="Age (optional)" style="max-width:110px">
+        <input class="hv-add-input hv-add-part-gender" type="text"
+               placeholder="Gender (optional)" style="max-width:150px">
         <button class="hv-add-btn hv-add-part-btn"
                 data-tid="${_hvEsc(team.id)}" data-tname="${_hvEsc(team.name)}">+</button>
       </div>` : '';
@@ -198,10 +198,11 @@ class HierarchyView {
       </section>`;
   }
 
-  _participantCard(p, behaviors, teamName, notifEmails = [], guides = []) {
+  _participantCard(p, instances, teamName, notifEmails = [], guides = []) {
     const canEdit = DB.auth.isStaff();
     const isSuper = DB.auth.isSupervisor();
-    const behaviorRows = behaviors.map(b => this._behaviorRow(b, p, teamName)).join('');
+    const sorted  = this._sortedInstances(instances);
+    const instanceRows = sorted.map(inst => this._instanceRow(inst, p, teamName)).join('');
     const notifRows = notifEmails.map(n => `
       <div class="hv-pnotif-row" data-nid="${n.id}">
         <span class="hv-pnotif-email">${_hvEsc(n.email)}</span>
@@ -236,12 +237,10 @@ class HierarchyView {
 
     const guideSection = isSuper ? this._guideSectionHTML(p, guides) : '';
 
-    const addBehaviorRow = canEdit ? `
+    const addChartRow = canEdit ? `
         <div class="hv-add-row">
-          <input class="hv-add-input hv-addbeh-input" type="text" placeholder="Add behavior&#8230;"
-                 data-pid="${_hvEsc(p.id)}" data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}">
-          <button class="hv-add-btn hv-addbeh-btn"
-                  data-pid="${_hvEsc(p.id)}" data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}">+</button>
+          <button class="hv-add-btn hv-addchart-btn"
+                  data-pid="${_hvEsc(p.id)}" data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}">+ Add Chart</button>
         </div>` : '';
 
     const bodyId     = `hv-body-${_hvEsc(p.id)}`;
@@ -268,11 +267,11 @@ class HierarchyView {
         </div>
         ${settingsPopover}
         <div class="hv-body hidden" id="${bodyId}">
-          <div class="hv-behaviors" id="hv-behs-${p.id}">
-            ${behaviorRows}
-            ${!behaviors.length ? '<p class="hv-no-behaviors">No behaviors yet.</p>' : ''}
+          <div class="hv-behaviors" id="hv-insts-${p.id}">
+            ${instanceRows}
+            ${!instances.length ? '<p class="hv-no-behaviors">No pinpoints yet.</p>' : ''}
           </div>
-          ${addBehaviorRow}
+          ${addChartRow}
         </div>
       </div>`;
   }
@@ -301,26 +300,19 @@ class HierarchyView {
         </div>`;
   }
 
-  _behaviorRow(b, p, teamName) {
-    const sorted     = this._sortedDomains(b.id);
-    const mostRecent = sorted[0] && this._getAccess(b.id, sorted[0].slug) > 0 ? sorted[0].slug : null;
-    const domainBtns = sorted.map(d => {
-      const isRecent = d.slug === mostRecent;
-      return `<button class="hv-domain-btn${isRecent ? ' hv-domain-btn--recent' : ''}"
-                      data-bid="${b.id}" data-dslug="${d.slug}" data-partid="${_hvEsc(p.id)}"
-                      data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}"
-                      data-bname="${_hvEsc(b.name)}" data-dname="${_hvEsc(d.name)}">${_hvEsc(d.name)}</button>`;
-    }).join('');
+  _instanceRow(inst, p, teamName) {
+    const isRecent = this._getAccess(inst.id) > 0 && inst.id === this._sortedInstances([inst])[0]?.id
+      ? true : false;
     const delBtn = DB.auth.isStaff()
-      ? `<button class="hv-del-beh" data-bid="${b.id}" data-bname="${_hvEsc(b.name)}" title="Remove behavior">&#10005;</button>`
+      ? `<button class="hv-del-beh" data-iid="${inst.id}" data-iname="${_hvEsc(inst.name)}" title="Remove pinpoint">&#10005;</button>`
       : '';
     return `
-      <div class="hv-behavior-row" id="hv-beh-${b.id}">
-        <div class="hv-behavior-label">
-          <span class="hv-behavior-name">${_hvEsc(b.name)}</span>
-          ${delBtn}
-        </div>
-        <div class="hv-domain-chips">${domainBtns}</div>
+      <div class="hv-behavior-row" id="hv-inst-${inst.id}">
+        <button class="hv-domain-btn${this._getAccess(inst.id) > 0 ? ' hv-domain-btn--recent' : ''}"
+                data-iid="${inst.id}" data-partid="${_hvEsc(p.id)}"
+                data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}"
+                data-iname="${_hvEsc(inst.name)}">${_hvEsc(inst.name)}</button>
+        ${delBtn}
       </div>`;
   }
 
@@ -364,19 +356,19 @@ class HierarchyView {
     const self = await DB.participants.getSelf();
     if (!self) {
       this._content.innerHTML =
-        '<p class="hv-empty-msg">No behaviors found. Contact your coach or supervisor.</p>';
+        '<p class="hv-empty-msg">No pinpoints found. Contact your coach or supervisor.</p>';
       return;
     }
-    const behaviors = await DB.behaviors.get(self.id);
+    const instances = await DB.participantPinpoints.get(self.id);
     const teamName  = (self.teams && self.teams.name) || '';
-    const rows = behaviors.map(b => this._behaviorRow(b, self, teamName)).join('');
+    const rows = this._sortedInstances(instances).map(inst => this._instanceRow(inst, self, teamName)).join('');
     this._content.innerHTML = `
       <section class="hv-team">
         <div class="hv-cards">
           <div class="hv-card">
             <div class="hv-card-name">${_hvEsc(self.name)}</div>
             <div class="hv-behaviors">
-              ${rows || '<p class="hv-no-behaviors">No behaviors yet.</p>'}
+              ${rows || '<p class="hv-no-behaviors">No pinpoints yet.</p>'}
             </div>
           </div>
         </div>
@@ -390,14 +382,14 @@ class HierarchyView {
     if (this._eventsBound) return;
     this._eventsBound = true;
     this._content.addEventListener('click', e => {
-      const domainBtn = e.target.closest('.hv-domain-btn');
-      if (domainBtn) { this._selectDomain(domainBtn); return; }
+      const instBtn = e.target.closest('.hv-domain-btn');
+      if (instBtn) { this._selectInstance(instBtn); return; }
 
       const toggle = e.target.closest('.js-toggle');
       if (toggle) { this._toggle(toggle); return; }
 
-      const delBeh = e.target.closest('.hv-del-beh');
-      if (delBeh) { this._confirmDeleteBehavior(delBeh.dataset.bid, delBeh.dataset.bname); return; }
+      const delInst = e.target.closest('.hv-del-beh');
+      if (delInst) { this._confirmDeleteInstance(delInst.dataset.iid, delInst.dataset.iname); return; }
 
       const guideAddBtn = e.target.closest('.hv-guide-add-btn');
       if (guideAddBtn) { this._addGuideToParticipant(guideAddBtn.dataset.pid); return; }
@@ -405,12 +397,10 @@ class HierarchyView {
       const guideDelBtn = e.target.closest('.hv-guide-chip-del');
       if (guideDelBtn) { this._removeGuideFromParticipant(guideDelBtn.dataset.pid, guideDelBtn.dataset.gid); return; }
 
-      // Add behavior — a dedicated class (not just .hv-add-btn[data-pid], which the
-      // notification and guide "+" buttons also carry and would otherwise collide with)
-      const addBehBtn = e.target.closest('.hv-addbeh-btn');
-      if (addBehBtn) {
-        const input = this._content.querySelector(`.hv-addbeh-input[data-pid="${addBehBtn.dataset.pid}"]`);
-        if (input) this._addBehavior(addBehBtn, input);
+      // Add Chart — opens the pinpoint-assignment modal
+      const addChartBtn = e.target.closest('.hv-addchart-btn');
+      if (addChartBtn) {
+        this._openAddChart(addChartBtn.dataset.pid, addChartBtn.dataset.tname, addChartBtn.dataset.pname);
         return;
       }
 
@@ -448,19 +438,13 @@ class HierarchyView {
       const notifInput = e.target.closest('.hv-pnotif-email-input, .hv-pnotif-label-input');
       if (notifInput) { this._addParticipantNotif(notifInput.dataset.pid); return; }
 
-      // Behavior input — dedicated class, see the click handler's comment above
-      const behInput = e.target.closest('.hv-addbeh-input');
-      if (behInput) {
-        const btn = this._content.querySelector(`.hv-addbeh-btn[data-pid="${behInput.dataset.pid}"]`);
-        if (btn) this._addBehavior(btn, behInput);
-        return;
-      }
-
-      // Participant name input — Enter to add
-      const partInput = e.target.closest('.hv-add-part-name');
+      // Participant name/age/gender inputs — Enter to add
+      const partInput = e.target.closest('.hv-add-part-name, .hv-add-part-age, .hv-add-part-gender');
       if (partInput) {
-        const btn = this._content.querySelector(`.hv-add-part-btn[data-tid="${partInput.dataset.tid}"]`);
-        if (btn) this._addParticipant(btn, partInput);
+        const tid = partInput.closest('.hv-add-participant-row')?.querySelector('.hv-add-part-name')?.dataset.tid;
+        const btn = this._content.querySelector(`.hv-add-part-btn[data-tid="${tid}"]`);
+        const nameEl = this._content.querySelector(`.hv-add-part-name[data-tid="${tid}"]`);
+        if (btn) this._addParticipant(btn, nameEl);
         return;
       }
 
@@ -477,10 +461,18 @@ class HierarchyView {
     if (chev) chev.innerHTML = closing ? '&#9654;' : '&#9660;';
   }
 
-  _selectDomain(el) {
-    const { bid, dslug, partid, tname, pname, bname, dname } = el.dataset;
-    this.recordAccess(bid, dslug);
-    this._onSelect(bid, dslug, { teamName: tname, participantName: pname, behaviorName: bname, domainName: dname, participantId: partid });
+  _selectInstance(el) {
+    const { iid, partid, tname, pname, iname } = el.dataset;
+    this.recordAccess(iid);
+    this._onSelect(iid, { teamName: tname, participantName: pname, instanceName: iname, participantId: partid });
+  }
+
+  _openAddChart(pid, tname, pname) {
+    if (window.addChartModal) {
+      window.addChartModal.show({ id: pid, name: pname }, tname);
+    } else {
+      alert('Add Chart is not available yet.');
+    }
   }
 
   // ── Mutations ────────────────────────────────────────────────────────────
@@ -508,41 +500,26 @@ class HierarchyView {
     }
   }
 
-  async _addBehavior(btn, input) {
-    const name = input.value.trim();
-    if (!name) { input.focus(); return; }
-    const { pid, tname, pname } = btn.dataset;
-    input.disabled = btn.disabled = true;
-    try {
-      const b = await DB.behaviors.add(pid, name);
-      const container = document.getElementById(`hv-behs-${pid}`);
-      if (container) {
-        container.querySelector('.hv-no-behaviors')?.remove();
-        container.insertAdjacentHTML('beforeend', this._behaviorRow(b, { id: pid, name: pname }, tname));
-      }
-      input.value = '';
-      this._applySearchFilter();
-    } catch (err) {
-      alert('Could not add behavior: ' + err.message);
-    } finally {
-      input.disabled = btn.disabled = false;
-      input.focus();
-    }
-  }
-
   async _addParticipant(btn, nameEl) {
     const name = nameEl?.value.trim();
     if (!name) { nameEl?.focus(); return; }
     const { tid, tname } = btn.dataset;
+    const row = btn.closest('.hv-add-participant-row');
+    const ageEl    = row?.querySelector('.hv-add-part-age');
+    const genderEl = row?.querySelector('.hv-add-part-gender');
+    const age    = ageEl?.value ? parseInt(ageEl.value, 10) : null;
+    const gender = genderEl?.value.trim() || null;
     nameEl.disabled = btn.disabled = true;
     try {
-      const p = await DB.participants.add(tid, name, null);
+      const p = await DB.participants.add(tid, name, null, age, gender);
       const container = document.getElementById(`hv-cards-${tid}`);
       if (container) {
         container.querySelector('.hv-no-participants')?.remove();
         container.insertAdjacentHTML('beforeend', this._participantCard(p, [], tname));
       }
       nameEl.value = '';
+      if (ageEl) ageEl.value = '';
+      if (genderEl) genderEl.value = '';
       this._applySearchFilter();
     } catch (err) {
       alert('Could not add participant: ' + err.message);
@@ -692,11 +669,11 @@ class HierarchyView {
     }
   }
 
-  async _confirmDeleteBehavior(behaviorId, behaviorName) {
-    if (!confirm(`Remove "${behaviorName}" and all its data? This cannot be undone.`)) return;
+  async _confirmDeleteInstance(instanceId, instanceName) {
+    if (!confirm(`Remove "${instanceName}" and all its data? This cannot be undone.`)) return;
     try {
-      await DB.behaviors.delete(behaviorId);
-      document.getElementById(`hv-beh-${behaviorId}`)?.remove();
+      await DB.participantPinpoints.delete(instanceId);
+      document.getElementById(`hv-inst-${instanceId}`)?.remove();
     } catch (err) {
       alert('Could not remove: ' + err.message);
     }

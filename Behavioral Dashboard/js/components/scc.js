@@ -15,7 +15,8 @@ class SCCChart {
     this._notePopupId = notePopupId; // defaults to the real dashboard's — pass a distinct id for any other chart instance sharing the page
     this.points  = [];
     this.chartType   = 'daily';
-    this.aggregation = 'geomean';
+    this.aggregation = 'geometric_mean';
+    this.measurementType = 'frequency'; // frequency | duration | latency | count_per_day
     this.viewStart   = 0;
     this._plottableCache      = null;
     this._timingGroups        = [];
@@ -63,6 +64,7 @@ class SCCChart {
 
     this.TIMING_ZERO_COL = 20;
     this.MONTH_ZERO_COL  = 72;
+    this.YEAR_ZERO_COL   = 5;
 
     this.C_CYCLE = '#00bcd4';
     this.C_FIVE  = '#33ccdd';
@@ -88,8 +90,14 @@ class SCCChart {
     'daily':         { PT: 88  },
     'weekly':        { PT: 88  },
     'monthly':       { PT: 110 },
+    'yearly':        { PT: 88  },
     'count_per_day': { PT: 88  },
   };
+
+  // duration/latency/count_per_day only ever have one data series (there's
+  // no separate "error" stream), so their slope box / stat displays show a
+  // single figure instead of frequency's Successes+Errors pair.
+  _isSingleSeries() { return this.measurementType !== 'frequency'; }
 
   _cfg() { return this._TYPE_CONFIG[this.chartType] || this._TYPE_CONFIG['daily']; }
 
@@ -113,6 +121,11 @@ class SCCChart {
 
   setAggregation(method) {
     this.aggregation = method;
+    this.draw();
+  }
+
+  setMeasurementType(type) {
+    this.measurementType = type || 'frequency';
     this.draw();
   }
 
@@ -145,6 +158,7 @@ class SCCChart {
 
   timingToCol(i) { return i + this.TIMING_ZERO_COL; }
   monthToCol(m)  { return m + this.MONTH_ZERO_COL;  }
+  yearToCol(y)   { return y + this.YEAR_ZERO_COL;   }
 
   _startDate() {
     if (!this.meta.startDate) return null;
@@ -161,10 +175,18 @@ class SCCChart {
            (end.getMonth()    - sd.getMonth());
   }
 
+  _yearOffsetOf(day) {
+    const sd = this._startDate();
+    if (!sd) return Math.floor(day / 365);
+    const end = new Date(sd);
+    end.setDate(end.getDate() + day);
+    return end.getFullYear() - sd.getFullYear();
+  }
+
   // ── Scroll API ────────────────────────────────────────────────────────────
 
   _scrollStep() {
-    return { timings: 20, daily: 14, weekly: 10, monthly: 12, count_per_day: 14 }[this.chartType] || 14;
+    return { timings: 20, daily: 14, weekly: 10, monthly: 12, yearly: 5, count_per_day: 14 }[this.chartType] || 14;
   }
 
   scrollBy(delta) { this.viewStart += delta; this.draw(); }
@@ -184,6 +206,7 @@ class SCCChart {
       }
       case 'weekly':  targetCol = Math.floor(rawDay / 7); break;
       case 'monthly': targetCol = this.monthToCol(this._monthOffsetOf(rawDay)); break;
+      case 'yearly':  targetCol = this.yearToCol(this._yearOffsetOf(rawDay)); break;
       default:        targetCol = rawDay;
     }
     const margin = Math.max(7, Math.floor(this.DAYS * 0.08));
@@ -194,12 +217,14 @@ class SCCChart {
   }
 
   // ── Aggregation ───────────────────────────────────────────────────────────
+  // 8 point-display modes. 'stacked' isn't handled here — it's a structural
+  // fork in _bucketAndAggregate (it doesn't collapse to a single point).
 
   _aggregate(values) {
     const vals = values.filter(v => typeof v === 'number' && v > 0);
     if (!vals.length) return null;
     switch (this.aggregation) {
-      case 'geomean': {
+      case 'geometric_mean': {
         const logSum = vals.reduce((s, v) => s + Math.log(v), 0);
         return Math.exp(logSum / vals.length);
       }
@@ -210,21 +235,70 @@ class SCCChart {
           ? sorted[mid]
           : (sorted[mid - 1] + sorted[mid]) / 2;
       }
-      case 'average':
-        return vals.reduce((s, v) => s + v, 0) / vals.length;
+      case 'first':      return vals[0];
+      case 'last':        return vals[vals.length - 1];
+      case 'summative':  return vals.reduce((s, v) => s + v, 0);
+      case 'best':        return Math.max(...vals);
+      case 'worst':        return Math.min(...vals);
       default: return null;
     }
   }
 
   // ── Plottable points ──────────────────────────────────────────────────────
   //
-  // Weekly / Monthly: aggregate dot and x types SEPARATELY so regression
-  // can draw independent best-fit lines for each.
+  // Weekly / Monthly / Yearly / Count-per-day: aggregate dot and x types
+  // SEPARATELY so regression can draw independent best-fit lines for each.
 
   _getPlottablePoints() {
     if (this._plottableCache) return this._plottableCache;
     this._plottableCache = this._computePlottable();
     return this._plottableCache;
+  }
+
+  // Shared bucketing for every non-daily/non-timings view. unitOf(day) maps a
+  // raw day offset to its logical bucket unit (week number, month offset,
+  // year offset, raw day for count-per-day); colOf(unit) maps that unit to
+  // its actual rendering column (adds a zero-col offset for month/year).
+  // 'stacked' mode skips aggregation entirely and plots every raw point in
+  // its bucket individually, all sharing the bucket's column.
+  _bucketAndAggregate(raw, unitOf, colOf) {
+    const dotBuckets = {}, xBuckets = {};
+    const result = [];
+    [...raw].sort((a, b) => a.day - b.day).forEach(p => {
+      const unit = unitOf(p.day);
+      const col  = colOf(unit);
+      if (this._isLineType(p.type)) {
+        result.push({ ...p, col, day: unit, px: this.colL(col), py: null });
+      } else if (p.type === 'dot') {
+        (dotBuckets[unit] ||= []).push(p);
+      } else if (p.type === 'x') {
+        (xBuckets[unit] ||= []).push(p);
+      }
+    });
+
+    const pushBucket = (buckets, type) => {
+      Object.entries(buckets).forEach(([unitStr, pts]) => {
+        const unit = Number(unitStr);
+        const col  = colOf(unit);
+        if (this.aggregation === 'stacked') {
+          pts.forEach(p => {
+            result.push({ ...p, col, day: unit,
+              px: this.colC(col),
+              py: p.val === 0 && p.floor > 0 ? this.yP(0.5 * 60 / p.floor) : this.yP(p.val) });
+          });
+          return;
+        }
+        const v = this._aggregate(pts.map(p => p.val));
+        if (v == null) return;
+        result.push({ type, col, day: unit, val: v,
+          note: pts.length > 1 ? `(${pts.length})` : '',
+          px: this.colC(col), py: this.yP(v) });
+      });
+    };
+    pushBucket(dotBuckets, 'dot');
+    pushBucket(xBuckets,   'x');
+    return result.sort((a, b) =>
+      a.col !== b.col ? a.col - b.col : (this._isLineType(a.type) ? -1 : 1));
   }
 
   _computePlottable() {
@@ -246,94 +320,20 @@ class SCCChart {
       }
 
       // ── Count per day ────────────────────────────────────────────────────
-      case 'count_per_day': {
-        const dotTotals = {}, xTotals = {};
-        const result = [];
-        [...raw].sort((a, b) => a.day - b.day).forEach(p => {
-          if (this._isLineType(p.type)) {
-            result.push({ ...p, col: p.day, px: this.colL(p.day), py: null });
-          } else if (p.type === 'dot') {
-            dotTotals[p.day] = (dotTotals[p.day] || 0) + (p.val || 0);
-          } else if (p.type === 'x') {
-            xTotals[p.day] = (xTotals[p.day] || 0) + (p.val || 0);
-          }
-        });
-        Object.entries(dotTotals).forEach(([day, v]) => {
-          const d = Number(day);
-          if (v <= 0) return;
-          result.push({ type: 'dot', col: d, day: d, val: v, note: '', px: this.colC(d), py: this.yP(v) });
-        });
-        Object.entries(xTotals).forEach(([day, v]) => {
-          const d = Number(day);
-          if (v <= 0) return;
-          result.push({ type: 'x', col: d, day: d, val: v, note: '', px: this.colC(d), py: this.yP(v) });
-        });
-        return result.sort((a, b) => a.col !== b.col ? a.col - b.col : (this._isLineType(a.type) ? -1 : 1));
-      }
+      case 'count_per_day':
+        return this._bucketAndAggregate(raw, day => day, unit => unit);
 
       // ── Weekly ───────────────────────────────────────────────────────────
-      case 'weekly': {
-        const dotBuckets = {}, xBuckets = {};
-        const result = [];
-        [...raw].sort((a, b) => a.day - b.day).forEach(p => {
-          const week = Math.floor(p.day / 7);
-          if (this._isLineType(p.type)) {
-            result.push({ ...p, col: week, day: week, px: this.colL(week), py: null });
-          } else if (p.type === 'dot') {
-            if (!dotBuckets[week]) dotBuckets[week] = [];
-            dotBuckets[week].push(p.val);
-          } else if (p.type === 'x') {
-            if (!xBuckets[week]) xBuckets[week] = [];
-            xBuckets[week].push(p.val);
-          }
-        });
-        const pushBucket = (buckets, type) =>
-          Object.entries(buckets).forEach(([week, vals]) => {
-            const v = this._aggregate(vals);
-            if (v == null) return;
-            const col = Number(week);
-            result.push({ type, col, day: col, val: v,
-              note: vals.length > 1 ? `(${vals.length})` : '',
-              px: this.colC(col), py: this.yP(v) });
-          });
-        pushBucket(dotBuckets, 'dot');
-        pushBucket(xBuckets,   'x');
-        return result.sort((a, b) =>
-          a.col !== b.col ? a.col - b.col : (this._isLineType(a.type) ? -1 : 1));
-      }
+      case 'weekly':
+        return this._bucketAndAggregate(raw, day => Math.floor(day / 7), unit => unit);
 
       // ── Monthly ──────────────────────────────────────────────────────────
-      case 'monthly': {
-        const dotBuckets = {}, xBuckets = {};
-        const result = [];
-        [...raw].sort((a, b) => a.day - b.day).forEach(p => {
-          const m   = this._monthOffsetOf(p.day);
-          const col = this.monthToCol(m);
-          if (this._isLineType(p.type)) {
-            result.push({ ...p, col, day: m, px: this.colL(col), py: null });
-          } else if (p.type === 'dot') {
-            if (!dotBuckets[m]) dotBuckets[m] = [];
-            dotBuckets[m].push(p.val);
-          } else if (p.type === 'x') {
-            if (!xBuckets[m]) xBuckets[m] = [];
-            xBuckets[m].push(p.val);
-          }
-        });
-        const pushBucket = (buckets, type) =>
-          Object.entries(buckets).forEach(([m, vals]) => {
-            const v = this._aggregate(vals);
-            if (v == null) return;
-            const mNum = Number(m);
-            const col  = this.monthToCol(mNum);
-            result.push({ type, col, day: mNum, val: v,
-              note: vals.length > 1 ? `(${vals.length})` : '',
-              px: this.colC(col), py: this.yP(v) });
-          });
-        pushBucket(dotBuckets, 'dot');
-        pushBucket(xBuckets,   'x');
-        return result.sort((a, b) =>
-          a.col !== b.col ? a.col - b.col : (this._isLineType(a.type) ? -1 : 1));
-      }
+      case 'monthly':
+        return this._bucketAndAggregate(raw, day => this._monthOffsetOf(day), unit => this.monthToCol(unit));
+
+      // ── Yearly ───────────────────────────────────────────────────────────
+      case 'yearly':
+        return this._bucketAndAggregate(raw, day => this._yearOffsetOf(day), unit => this.yearToCol(unit));
 
       // ── Timings ──────────────────────────────────────────────────────────
       case 'timings': {
@@ -489,8 +489,8 @@ class SCCChart {
     if (this.chartType === 'timings') { box.innerHTML = ''; return; }
 
     // Express slope as a celeration factor per natural unit for the chart type
-    const perUnit   = { daily: 7, weekly: 1, monthly: 1, count_per_day: 7 }[this.chartType] || 1;
-    const unitLabel = { daily: '/wk', weekly: '/wk', monthly: '/mo', count_per_day: '/wk' }[this.chartType] || '/wk';
+    const perUnit   = { daily: 7, weekly: 1, monthly: 1, yearly: 1, count_per_day: 7 }[this.chartType] || 1;
+    const unitLabel = { daily: '/wk', weekly: '/wk', monthly: '/mo', yearly: '/yr', count_per_day: '/wk' }[this.chartType] || '/wk';
 
     const fmtFactor = reg => {
       if (!reg || reg.m === null) return '—';
@@ -534,9 +534,11 @@ class SCCChart {
         <span class="slope-n">${reg ? reg.n : 0} pt${reg && reg.n === 1 ? '' : 's'}</span>
       </div>`;
 
-    box.innerHTML =
-      item(regressions.dot, 'Successes', this.C_REG_DOT, this.meta.acceltarget, true) +
-      item(regressions.x,   'Errors',    this.C_REG_X,   this.meta.deceltarget, false);
+    const isAccel = this.meta.goal !== 'Deceleration';
+    box.innerHTML = this._isSingleSeries()
+      ? item(regressions.dot, this.meta.correct || 'Measurement', this.C_REG_DOT, isAccel ? this.meta.acceltarget : this.meta.deceltarget, isAccel)
+      : item(regressions.dot, 'Successes', this.C_REG_DOT, this.meta.acceltarget, true) +
+        item(regressions.x,   'Errors',    this.C_REG_X,   this.meta.deceltarget, false);
   }
 
   // ── Main draw ─────────────────────────────────────────────────────────────
@@ -574,7 +576,7 @@ class SCCChart {
       const pairs = typePts.map(p => ({ x: p.col, y: Math.log10(p.val) }));
       const reg   = this._leastSquares(pairs);
       if (reg.m === null) return { cel: null, bounce: null };
-      const perUnit = { daily: 7, weekly: 1, monthly: 1, timings: 1, count_per_day: 7 }[this.chartType] || 7;
+      const perUnit = { daily: 7, weekly: 1, monthly: 1, yearly: 1, timings: 1, count_per_day: 7 }[this.chartType] || 7;
       const residuals = pairs.map(p => Math.abs(p.y - (reg.m * p.x + reg.b)));
       return { cel: Math.pow(10, reg.m * perUnit), bounce: Math.pow(10, Math.max(...residuals)) };
     };
@@ -785,14 +787,10 @@ class SCCChart {
 
   _drawFloorTicks() {
     if (this.chartType === 'count_per_day') return;
-    const pts = this._getPlottablePoints().filter(p => {
-      if (!p.floor || p.floor <= 0 || this._isLineType(p.type)) return false;
-      // Skip when the tick would land exactly on the point itself (a single-count
-      // entry, e.g. duration/latency timing entries) — it adds no information there,
-      // only value for multi-count entries where the floor differs from the rate.
-      const floorRate = 60 / p.floor;
-      return Math.abs(p.val - floorRate) > floorRate * 1e-6;
-    });
+    // Duration/latency points are always single-count timing entries — the
+    // floor tick would land exactly on the point itself and add no information.
+    if (this.measurementType === 'duration' || this.measurementType === 'latency') return;
+    const pts = this._getPlottablePoints().filter(p => !this._isLineType(p.type) && p.floor > 0);
     if (!pts.length) return;
     const { ctx } = this;
     ctx.save();
@@ -836,8 +834,9 @@ class SCCChart {
     ctx.beginPath(); ctx.moveTo(PL, topY); ctx.lineTo(PL + cW, topY); ctx.stroke();
 
     // Vertical column lines
-    const majorEvery = { timings: 20, daily: 7, weekly: 10, monthly: 12 }[this.chartType] || 7;
+    const majorEvery = { timings: 20, daily: 7, weekly: 10, monthly: 12, yearly: 5 }[this.chartType] || 7;
     const zeroCol    = this.chartType === 'monthly' ? this.MONTH_ZERO_COL
+                     : this.chartType === 'yearly'  ? this.YEAR_ZERO_COL
                      : this.chartType === 'timings' ? this.TIMING_ZERO_COL : -Infinity;
 
     for (let col = vs; col <= ve; col++) {
@@ -938,6 +937,7 @@ class SCCChart {
        daily:         () => this._renderXAxis_daily(),
        weekly:        () => this._renderXAxis_weekly(),
        monthly:       () => this._renderXAxis_monthly(),
+       yearly:        () => this._renderXAxis_yearly(),
        count_per_day: () => this._renderXAxis_daily(),
     }[this.chartType] || (() => this._renderXAxis_daily()))();
     ctx.restore();
@@ -1094,6 +1094,36 @@ class SCCChart {
     ctx.fillText('CALENDAR MONTHS', this.PL + this.cW / 2, this.PT - 58);
   }
 
+  _renderXAxis_yearly() {
+    const { ctx } = this;
+    const sd = this._startDate();
+    const startYear = sd ? sd.getFullYear() : new Date().getFullYear();
+    const YZC = this.YEAR_ZERO_COL;
+    const vs = this.viewStart, ve = vs + this.DAYS;
+
+    ctx.fillStyle = this.C_TEXT; ctx.font = 'bold 10px Arial,sans-serif'; ctx.textAlign = 'center';
+    for (let col = vs; col <= ve; col++) {
+      const x = this.colL(col);
+      if (x < this.PL - 10 || x > this.PL + this.cW + 10) continue;
+      ctx.fillText(String(col - YZC), x, this.PT + this.cH + 15);
+      ctx.strokeStyle = this.C_TEXT; ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(x, this.PT + this.cH + 1); ctx.lineTo(x, this.PT + this.cH + 7); ctx.stroke();
+    }
+    ctx.font = 'bold 11px Arial,sans-serif';
+    ctx.fillText('SUCCESSIVE CALENDAR YEARS', this.PL + this.cW / 2, this.PT + this.cH + 28);
+
+    for (let col = vs; col <= ve; col++) {
+      const x = this.colL(col);
+      if (x < this.PL - 10 || x > this.PL + this.cW + 10) continue;
+      ctx.textAlign = 'center'; ctx.fillStyle = this.C_TEXT; ctx.font = '9px Arial,sans-serif';
+      ctx.fillText(String(startYear + (col - YZC)), x, this.PT - 22);
+    }
+
+    ctx.fillStyle = this.C_TEXT; ctx.font = 'bold 12px Arial,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('CALENDAR YEARS', this.PL + this.cW / 2, this.PT - 40);
+  }
+
   // ── Timing group dividers ─────────────────────────────────────────────────
 
   _drawTimingDividers() {
@@ -1151,7 +1181,7 @@ class SCCChart {
     if (!box) return;
     const correct   = this.meta.correct   || 'Correct';
     const incorrect = this.meta.incorrect || 'Error';
-    const dotSym = { circle: '●', square: '■', triangle: '▲', diamond: '◆' }[this.meta.dotShape || 'circle'] || '●';
+    const dotSym = { circle: '●', square: '■', triangle: '▲', diamond: '◆', slash: '/', backslash: '\\' }[this.meta.dotShape || 'circle'] || '●';
     const xSym   = { x: '×', plus: '+', dash: '—', opencircle: '○' }[this.meta.xShape || 'x'] || '×';
     const dotColor = this.meta.dotColor || '#009933';
     const xColor   = this.meta.xColor   || '#cc0000';
@@ -1211,6 +1241,12 @@ class SCCChart {
         ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([]);
         if (shape === 'square') {
           ctx.fillRect(p.px - s + 1, p.py - s + 1, (s - 1) * 2, (s - 1) * 2);
+        } else if (shape === 'slash' || shape === 'backslash') {
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          if (shape === 'slash') { ctx.moveTo(p.px - s, p.py + s); ctx.lineTo(p.px + s, p.py - s); }
+          else                   { ctx.moveTo(p.px - s, p.py - s); ctx.lineTo(p.px + s, p.py + s); }
+          ctx.stroke();
         } else {
           ctx.beginPath();
           if (shape === 'triangle') {
@@ -1252,13 +1288,11 @@ class SCCChart {
 
   _isLineType(type) { return type === 'phase' || type === 'intervention'; }
 
-  // A single-count entry (val === 60/floor, i.e. duration/latency timing entries)
-  // reads better as the time it represents than as a count/min rate — same test
-  // used to suppress the redundant record-floor tick for these points.
+  // Duration/latency points read better as the time they represent than as a
+  // count/min rate. measurementType is a real stored field now, so this is a
+  // simple chart-level check rather than inferring it per-point from val/floor.
   _isTimingPoint(p) {
-    if (!p.floor || p.floor <= 0) return false;
-    const floorRate = 60 / p.floor;
-    return Math.abs(p.val - floorRate) <= floorRate * 1e-6;
+    return (this.measurementType === 'duration' || this.measurementType === 'latency') && p.floor > 0;
   }
 
   // Mirrors GoalsManager._formatTime/_formatSecPart — m:ss, with a trimmed
@@ -1296,7 +1330,7 @@ class SCCChart {
   // ── Tooltip ───────────────────────────────────────────────────────────────
 
   _colLabel(pos) {
-    const prefix = { timings: 'Msmt', daily: 'Day', weekly: 'Week', monthly: 'Month', count_per_day: 'Day' }[this.chartType] || 'Col';
+    const prefix = { timings: 'Msmt', daily: 'Day', weekly: 'Week', monthly: 'Month', yearly: 'Year', count_per_day: 'Day' }[this.chartType] || 'Col';
     return `${prefix} ${pos}`;
   }
 
@@ -1316,6 +1350,10 @@ class SCCChart {
       }
       case 'monthly': {
         const dt = new Date(sd); dt.setMonth(dt.getMonth() + (col - this.MONTH_ZERO_COL));
+        return fmt(dt);
+      }
+      case 'yearly': {
+        const dt = new Date(sd); dt.setFullYear(dt.getFullYear() + (col - this.YEAR_ZERO_COL));
         return fmt(dt);
       }
       default: return null;
@@ -1389,7 +1427,7 @@ class SCCChart {
         .map(p => ({ px: p.px, note: p.note, type: p.type, day: p.day, val: p.val }));
     }
 
-    // weekly/monthly/count_per_day: notes may be stripped by aggregation — use raw points
+    // weekly/monthly/yearly/count_per_day: notes may be stripped by aggregation — use raw points
     return this.points
       .filter(p => !this._isLineType(p.type) && hasNote(p.note))
       .map(p => {
@@ -1398,6 +1436,8 @@ class SCCChart {
           px = this.colC(p.day);
         } else if (this.chartType === 'weekly') {
           px = this.colC(Math.floor(p.day / 7));
+        } else if (this.chartType === 'yearly') {
+          px = this.colC(this.yearToCol(this._yearOffsetOf(p.day)));
         } else {
           px = this.colC(this.monthToCol(this._monthOffsetOf(p.day)));
         }
@@ -1511,8 +1551,9 @@ class SCCChart {
 
     box.innerHTML =
       `<span class="slope-date-label">${dateStr}</span>` +
-      item(tr.dot, 'Successes', this.C_REG_DOT) +
-      item(tr.x,   'Errors',    this.C_REG_X);
+      (this._isSingleSeries()
+        ? item(tr.dot, this.meta.correct || 'Measurement', this.C_REG_DOT)
+        : item(tr.dot, 'Successes', this.C_REG_DOT) + item(tr.x, 'Errors', this.C_REG_X));
   }
 
   _showNotePopup(pts, localX, localY) {

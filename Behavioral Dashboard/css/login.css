@@ -301,6 +301,8 @@
   overflow-y: auto;
 }
 
+.pf-form-card { max-width: 760px; }
+
 .overlay-primary-section {
   margin-bottom: 14px;
   padding-bottom: 14px;

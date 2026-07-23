@@ -2,9 +2,9 @@
  * exportReportModal.js — PDF Progress Report export
  * A standalone menu (opened from the Overview page) for generating a
  * printable multi-page PDF for one athlete: a cover page, a plain table of
- * contents (skill/domain + page number, nothing else), and one full detail
- * page per selected skill/domain with the chart, a Program Review box, and
- * blank space for handwritten comments.
+ * contents (pinpoint + page number, nothing else), and one full detail page
+ * per selected pinpoint with the chart, a Program Review box, and blank
+ * space for handwritten comments.
  * Read-only — this only renders already-accessible data, nothing is saved.
  */
 
@@ -13,8 +13,7 @@ class ExportReportModal {
     this.chart = new SCCChart('report-render-canvas', 'report-render-tooltip');
     this._teams = [];
     this._participants = [];
-    this._domains = [];
-    this._behaviors = [];
+    this._instances = [];
     this._loaded = false;
     this._generating = false;
     this._render();
@@ -28,19 +27,17 @@ class ExportReportModal {
     }
     this._feedback('', false);
     this._renderAthleteSelects();
-    this._renderDomainChecks();
-    this._renderSkillChecks([]);
+    this._renderPinpointChecks([]);
   }
 
   hide() { this.overlay.classList.add('hidden'); }
 
   async _loadHierarchy() {
-    const [teams, participants, domains] = await Promise.all([
-      DB.teams.getAll(), DB.participants.getAll(), DB.domains.getAll(),
+    const [teams, participants] = await Promise.all([
+      DB.teams.getAll(), DB.participants.getAll(),
     ]);
     this._teams = teams || [];
     this._participants = participants || [];
-    this._domains = domains || [];
     this._loaded = true;
   }
 
@@ -61,10 +58,7 @@ class ExportReportModal {
           </div>
         </div>
 
-        <label class="manage-section-label">Domains to include</label>
-        <div class="overlay-checkbox-row" id="report-domain-checks"></div>
-
-        <label class="manage-section-label" style="margin-top:14px">Skills to include</label>
+        <label class="manage-section-label" style="margin-top:14px">Pinpoints to include</label>
         <div class="report-skill-checks" id="report-skill-checks">
           <p class="hv-notify-empty">Choose an athlete first.</p>
         </div>
@@ -83,7 +77,7 @@ class ExportReportModal {
     const partSel = document.getElementById('report-participant');
     teamSel.addEventListener('change', () => {
       partSel.innerHTML = this._participantOptionsHTML(teamSel.value, '');
-      this._renderSkillChecks([]);
+      this._renderPinpointChecks([]);
     });
     partSel.addEventListener('change', () => this._onParticipantChange());
 
@@ -111,35 +105,28 @@ class ExportReportModal {
     partSel.innerHTML = this._participantOptionsHTML('', '');
   }
 
-  _renderDomainChecks() {
-    const box = document.getElementById('report-domain-checks');
-    box.innerHTML = this._domains.map(d => `
-      <label><input type="checkbox" class="report-domain-check" value="${_esc(d.id)}" checked> ${_esc(d.name)}</label>
-    `).join('');
-  }
-
-  _renderSkillChecks(behaviors) {
+  _renderPinpointChecks(instances) {
     const box = document.getElementById('report-skill-checks');
-    if (!behaviors.length) {
+    if (!instances.length) {
       box.innerHTML = '<p class="hv-notify-empty">Choose an athlete first.</p>';
       return;
     }
-    box.innerHTML = behaviors.map(b => `
-      <label class="report-skill-check-row"><input type="checkbox" class="report-skill-check" value="${_esc(b.id)}" data-name="${_esc(b.name)}" checked> ${_esc(b.name)}</label>
+    box.innerHTML = instances.map(i => `
+      <label class="report-skill-check-row"><input type="checkbox" class="report-skill-check" value="${_esc(i.id)}" data-name="${_esc(i.name)}" checked> ${_esc(i.name)}</label>
     `).join('');
   }
 
   async _onParticipantChange() {
     const pid = document.getElementById('report-participant').value;
-    if (!pid) { this._renderSkillChecks([]); return; }
-    this._feedback('Loading skills…', false);
+    if (!pid) { this._renderPinpointChecks([]); return; }
+    this._feedback('Loading pinpoints…', false);
     try {
-      const behaviors = await DB.behaviors.get(pid);
-      this._behaviors = behaviors || [];
-      this._renderSkillChecks(this._behaviors);
+      const instances = await DB.participantPinpoints.get(pid);
+      this._instances = instances || [];
+      this._renderPinpointChecks(this._instances);
       this._feedback('', false);
     } catch (err) {
-      this._feedback('Could not load skills: ' + err.message, true);
+      this._feedback('Could not load pinpoints: ' + err.message, true);
     }
   }
 
@@ -160,14 +147,11 @@ class ExportReportModal {
 
     const participant = this._participants.find(p => String(p.id) === String(pid));
     const team = this._teams.find(t => String(t.id) === String(participant?.team_id));
-    const skillIds = [...document.querySelectorAll('.report-skill-check:checked')].map(el => el.value);
-    const domainIds = [...document.querySelectorAll('.report-domain-check:checked')].map(el => el.value);
+    const pinpointIds = [...document.querySelectorAll('.report-skill-check:checked')].map(el => el.value);
 
-    if (!skillIds.length) { this._feedback('Check at least one skill.', true); return; }
-    if (!domainIds.length) { this._feedback('Check at least one domain.', true); return; }
+    if (!pinpointIds.length) { this._feedback('Check at least one pinpoint.', true); return; }
 
-    const skills = this._behaviors.filter(b => skillIds.includes(String(b.id)));
-    const domains = this._domains.filter(d => domainIds.includes(String(d.id)));
+    const pinpoints = this._instances.filter(i => pinpointIds.includes(String(i.id)));
 
     this._generating = true;
     const btn = document.getElementById('report-generate-btn');
@@ -175,20 +159,18 @@ class ExportReportModal {
 
     try {
       const sections = [];
-      const total = skills.length * domains.length;
+      const total = pinpoints.length;
       let done = 0;
 
-      for (const skill of skills) {
-        for (const domain of domains) {
-          done++;
-          this._feedback(`Rendering ${skill.name} — ${domain.name} (${done} of ${total})…`, false);
-          const section = await this._renderSection(skill, domain);
-          if (section) sections.push(section);
-        }
+      for (const pinpoint of pinpoints) {
+        done++;
+        this._feedback(`Rendering ${pinpoint.name} (${done} of ${total})…`, false);
+        const section = await this._renderSection(pinpoint);
+        if (section) sections.push(section);
       }
 
       if (!sections.length) {
-        this._feedback('None of the selected skills have any data to include.', true);
+        this._feedback('None of the selected pinpoints have any data to include.', true);
         return;
       }
 
@@ -208,11 +190,11 @@ class ExportReportModal {
     }
   }
 
-  async _renderSection(skill, domain) {
+  async _renderSection(instance) {
     const [rawPoints, meta, goals] = await Promise.all([
-      DB.points.get(skill.id, domain.id),
-      DB.meta.get(skill.id, domain.id),
-      DB.goals.get(skill.id, domain.id).catch(() => []),
+      DB.points.get(instance.id),
+      DB.meta.get(instance.id),
+      DB.goals.get(instance.id).catch(() => []),
     ]);
     if (!rawPoints || !rawPoints.length) return null;
 
@@ -229,12 +211,12 @@ class ExportReportModal {
     const aimHi = meta?.aim_high != null ? parseFloat(meta.aim_high) : NaN;
     c.aimLow  = isNaN(aimLo) ? null : aimLo;
     c.aimHigh = isNaN(aimHi) ? null : aimHi;
-    c.chartType = 'daily';
-    c.aggregation = 'geomean';
     c.overlays = [];
     c.showTrendlines = true;
     c.showPhaseLines = true;
-    c.viewStart = 0;
+    c.setMeasurementType(instance.measurement_type);
+    c.setChartType(instance.view || 'daily');
+    c.setAggregation(instance.point_display || 'geometric_mean');
 
     const maxDay = Math.max(...c.points.filter(p => !c._isLineType(p.type)).map(p => p.day), 0);
     c.draw();
@@ -244,7 +226,7 @@ class ExportReportModal {
     const imgData = canvas.toDataURL('image/png');
     const stats = c.getStats();
 
-    return { skillName: skill.name, domainName: domain.name, imgData, stats, meta: c.meta, goals: goals || [] };
+    return { name: instance.name, imgData, stats, meta: c.meta, goals: goals || [] };
   }
 
   // ── PDF assembly ────────────────────────────────────────────────────────
@@ -334,6 +316,8 @@ class ExportReportModal {
       case 'square':   doc.rect(cx - s, cy - s, s * 2, s * 2, 'F'); break;
       case 'triangle': doc.triangle(cx, cy - s, cx + s, cy + s, cx - s, cy + s, 'F'); break;
       case 'diamond':  doc.lines([[s, s], [-s, s], [-s, -s], [s, -s]], cx, cy - s, [1, 1], 'F', true); break;
+      case 'slash':      doc.line(cx - s, cy + s, cx + s, cy - s); break;
+      case 'backslash':  doc.line(cx - s, cy - s, cx + s, cy + s); break;
       case 'plus':     doc.line(cx - s, cy, cx + s, cy); doc.line(cx, cy - s, cx, cy + s); break;
       case 'dash':     doc.line(cx - s, cy, cx + s, cy); break;
       case 'opencircle': doc.circle(cx, cy, s, 'S'); break;
@@ -486,7 +470,7 @@ class ExportReportModal {
     report.sections.forEach((section, i) => {
       if (cy + tocLineH > PH - MARGIN) { doc.addPage(); cy = MARGIN; }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(0, 51, 68);
-      doc.text(`${i + 1}. ${section.skillName} — ${section.domainName}`, MARGIN, cy);
+      doc.text(`${i + 1}. ${section.name}`, MARGIN, cy);
       doc.setTextColor(90, 138, 154);
       doc.text(`Page ${firstDetailPage + i}`, PW - MARGIN, cy, { align: 'right' });
       cy += tocLineH;
@@ -500,7 +484,7 @@ class ExportReportModal {
       doc.addPage();
       let dy = MARGIN;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(0, 51, 68);
-      doc.text(`${section.skillName} — ${section.domainName}`, MARGIN, dy);
+      doc.text(section.name, MARGIN, dy);
       dy += 20;
 
       doc.addImage(section.imgData, 'PNG', MARGIN, dy, detailImgW, detailImgH);

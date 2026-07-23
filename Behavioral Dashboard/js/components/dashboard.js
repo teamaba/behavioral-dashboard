@@ -6,17 +6,8 @@
 
 class Dashboard {
   constructor() {
-    this.domains = {
-      movement:  'Movement Fluency',
-      physical:  'Physical Load',
-      decision:  'Decision Fluency',
-      emotional: 'Emotional Performance'
-    };
-    this.currentDomain     = null;
-    this.currentBehaviorId = null;
-    this.currentDomainId   = null;
-    this._domainMap        = null;
-    this._domainAim        = {};
+    this.currentInstanceId = null;
+    this.currentInstance   = null; // full participant_pinpoints row (measurement_type, view, point_display, ...)
     this._editingIndex     = null;
     this._context          = null;
 
@@ -67,7 +58,7 @@ class Dashboard {
       const type = sel.value;
       this.chart.setChartType(type);
       if (aggCtrl) {
-        const showAgg = type === 'weekly' || type === 'monthly';
+        const showAgg = type === 'weekly' || type === 'monthly' || type === 'yearly' || type === 'count_per_day';
         aggCtrl.classList.toggle('hidden', !showAgg);
       }
       const floorGroup = document.getElementById('entry-floor')?.closest('.field-group');
@@ -77,6 +68,7 @@ class Dashboard {
       const aimHighLabel = document.querySelector('label[for="aim-high"]');
       if (aimLowLabel)  aimLowLabel.textContent  = isCpd ? 'Aim low (count/day)'  : 'Aim low (rate/min)';
       if (aimHighLabel) aimHighLabel.textContent = isCpd ? 'Aim high (count/day)' : 'Aim high (rate/min)';
+      if (this.currentInstanceId) this._saveInstanceDisplay();
     };
 
     sel.addEventListener('change', update);
@@ -88,7 +80,25 @@ class Dashboard {
     if (!sel) return;
     sel.addEventListener('change', () => {
       this.chart.setAggregation(sel.value);
+      if (this.currentInstanceId) this._saveInstanceDisplay();
     });
+  }
+
+  // Persists the currently-selected view + point display back onto the
+  // instance so it's sticky next time this pinpoint is opened.
+  async _saveInstanceDisplay() {
+    const view         = document.getElementById('chart-type')?.value;
+    const point_display = document.getElementById('aggregation-method')?.value;
+    if (!view) return;
+    try {
+      await DB.participantPinpoints.update(this.currentInstanceId, { view, point_display });
+      if (this.currentInstance) {
+        this.currentInstance.view = view;
+        this.currentInstance.point_display = point_display;
+      }
+    } catch (err) {
+      console.error('[Dashboard] Could not save display preference:', err);
+    }
   }
 
   _bindAim() {
@@ -108,38 +118,46 @@ class Dashboard {
 
   // ── Domain switching ─────────────────────────────────────────────────────
 
-  // Called by NavTree when the user selects a domain item
-  async activate(behaviorId, domainSlug, context) {
+  // Called by NavTree/HierarchyView when the user selects a pinpoint chart instance
+  async activate(instanceId, context) {
     // Hide prompt and show chart sections immediately (no async gap)
     this._hideBehaviorPrompt();
     this._setLoading(true);
 
-    // Resolve domain IDs on first call (cached for session)
-    if (!this._domainMap) {
-      const domains = await DB.domains.getAll();
-      this._domainMap = {};
-      domains.forEach(d => { this._domainMap[d.slug] = d; });
-    }
-    const domain = this._domainMap[domainSlug];
-    if (!domain) { this._setLoading(false); return; }
-
     const aimLowEl  = document.getElementById('aim-low');
     const aimHighEl = document.getElementById('aim-high');
 
-    this.currentBehaviorId = behaviorId;
-    this.currentDomainId   = domain.id;
-    this.currentDomain     = domainSlug;
-    this._context          = context;
-
-    // Update breadcrumb
-    const parts = [context.participantName, context.behaviorName, domain.name].filter(Boolean);
-    const titleEl = document.getElementById('domain-title');
-    if (titleEl) titleEl.textContent = parts.join(' › ');
+    this.currentInstanceId = instanceId;
+    this._context           = context;
 
     try {
+      const instance = await DB.participantPinpoints.getOne(instanceId);
+      if (!instance) { this._setLoading(false); return; }
+      this.currentInstance = instance;
+
+      // Update breadcrumb
+      const parts = [context.participantName, instance.name].filter(Boolean);
+      const titleEl = document.getElementById('domain-title');
+      if (titleEl) titleEl.textContent = parts.join(' › ');
+
+      // Apply the instance's locked measurement type + sticky view/point display
+      this.chart.setMeasurementType(instance.measurement_type);
+      const chartTypeSel = document.getElementById('chart-type');
+      const aggSel        = document.getElementById('aggregation-method');
+      if (chartTypeSel) chartTypeSel.value = instance.view || 'daily';
+      if (aggSel)         aggSel.value        = instance.point_display || 'geometric_mean';
+      this.chart.setChartType(instance.view || 'daily');
+      this.chart.setAggregation(instance.point_display || 'geometric_mean');
+      const aggCtrl = document.getElementById('aggregation-control');
+      if (aggCtrl) {
+        const showAgg = ['weekly', 'monthly', 'yearly', 'count_per_day'].includes(instance.view);
+        aggCtrl.classList.toggle('hidden', !showAgg);
+      }
+      this._applyEntryTypeMode(document.getElementById('entry-type').value);
+
       const [points, meta] = await Promise.all([
-        DB.points.get(behaviorId, domain.id),
-        DB.meta.get(behaviorId, domain.id)
+        DB.points.get(instanceId),
+        DB.meta.get(instanceId)
       ]);
 
       // Restore aim values from DB
@@ -168,7 +186,14 @@ class Dashboard {
       metaFields.forEach(key => {
         const input = document.getElementById('meta-' + key.toLowerCase());
         if (input) {
-          const saved = meta && meta[key] != null && meta[key] !== '' ? meta[key] : null;
+          let saved = meta && meta[key] != null && meta[key] !== '' ? meta[key] : null;
+          // First time this instance's chart_meta is created, the log/legend
+          // fields prefill from the pinpoint the instance was copied from.
+          if (saved == null) {
+            if (key === 'correct')   saved = instance.correct_label   || null;
+            if (key === 'incorrect') saved = instance.incorrect_label || null;
+            if (key === 'neutral')   saved = instance.neutral_label   || null;
+          }
           input.value = saved ?? '';
           this.chart.setMeta(key, input.value);
         }
@@ -183,7 +208,7 @@ class Dashboard {
       }
 
       this._renderEntries();
-      this.goalsManager?.setDomain(behaviorId, domain.id, `${context.behaviorName} › ${domain.name}`, context.participantId, context.participantName, context.teamName);
+      this.goalsManager?.setInstance(instanceId, instance.name, context.participantId, context.participantName, context.teamName);
     } catch (err) {
       this._showFeedback('Error loading data: ' + err.message, true);
       console.error(err);
@@ -207,7 +232,7 @@ class Dashboard {
   }
 
   async _saveMeta() {
-    if (!this.currentBehaviorId || !this.currentDomainId) return;
+    if (!this.currentInstanceId) return;
     const fields = {};
     document.querySelectorAll('[data-meta]').forEach(input => {
       fields[input.dataset.meta] = input.value.trim() || null;
@@ -217,7 +242,7 @@ class Dashboard {
     fields['aim_low']  = isNaN(lo) ? null : lo;
     fields['aim_high'] = isNaN(hi) ? null : hi;
     try {
-      await DB.meta.upsert(this.currentBehaviorId, this.currentDomainId, fields);
+      await DB.meta.upsert(this.currentInstanceId, fields);
     } catch (err) {
       this._showFeedback('Meta save failed: ' + err.message, true);
     }
@@ -230,13 +255,16 @@ class Dashboard {
     const set = (id, val) => { const e = el(id); if (e) e.textContent = val; };
 
     // Legend: displayed points and level method
-    const dpMap  = { timings: 'Individual', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', count_per_day: 'Daily Total' };
-    const lvlMap = { geomean: 'Geometric Mean', median: 'Median', average: 'Mean' };
+    const dpMap  = { timings: 'Individual', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly', count_per_day: 'Daily Total' };
+    const lvlMap = {
+      geometric_mean: 'Geometric Mean', median: 'Median', first: 'First', last: 'Last',
+      stacked: 'Stacked', summative: 'Summative', best: 'Best', worst: 'Worst'
+    };
     set('review-displayed-points', dpMap[this.chart.chartType] || '—');
     set('review-level-method', lvlMap[this.chart.aggregation] || 'Geometric Mean');
 
     // Marker symbols + labels
-    const dotSym   = { circle: '●', square: '■', triangle: '▲', diamond: '◆' }[this.chart.meta.dotShape || 'circle'] || '●';
+    const dotSym   = { circle: '●', square: '■', triangle: '▲', diamond: '◆', slash: '/', backslash: '\\' }[this.chart.meta.dotShape || 'circle'] || '●';
     const xSym     = { x: '×', plus: '+', dash: '—', opencircle: '○' }[this.chart.meta.xShape || 'x'] || '×';
     const dotColor = this.chart.meta.dotColor || '#009933';
     const xColor   = this.chart.meta.xColor   || '#cc0000';
@@ -276,10 +304,12 @@ class Dashboard {
 
   _bindMarkerPopup() {
     const DOT_SHAPES = [
-      { value: 'circle',   sym: '●' },
-      { value: 'square',   sym: '■' },
-      { value: 'triangle', sym: '▲' },
-      { value: 'diamond',  sym: '◆' },
+      { value: 'circle',    sym: '●' },
+      { value: 'square',    sym: '■' },
+      { value: 'triangle',  sym: '▲' },
+      { value: 'diamond',   sym: '◆' },
+      { value: 'slash',     sym: '/' },
+      { value: 'backslash', sym: '\\' },
     ];
     const X_SHAPES = [
       { value: 'x',          sym: '×' },
@@ -395,11 +425,15 @@ class Dashboard {
   // Duration/latency are single-trial timing entries: successes is always exactly
   // 1 (this trial happened), there's no separate "errors" count, and the floor
   // field holds the actual duration/latency observed rather than an observation window.
-  _isTimingType(type) { return type === 'duration' || type === 'latency'; }
+  // Measurement type is locked on the pinpoint instance now, not a per-entry pick.
+  _isTimingType() {
+    const mt = this.currentInstance?.measurement_type;
+    return mt === 'duration' || mt === 'latency';
+  }
 
   _applyEntryTypeMode(type) {
     const isLine   = type === 'phase' || type === 'intervention';
-    const isTiming = this._isTimingType(type);
+    const isTiming = !isLine && this._isTimingType();
 
     const successesEl = document.getElementById('entry-successes');
     const errorsEl     = document.getElementById('entry-errors');
@@ -420,7 +454,8 @@ class Dashboard {
       errorsEl.disabled    = true;
       errorsGroup.style.opacity = '0.4';
       successesLbl.textContent  = 'Trial';
-      floorLbl.textContent      = type === 'duration' ? 'Duration held (m:ss, m:ss.ms, or h:mm:ss)' : 'Latency (m:ss, m:ss.ms, or h:mm:ss)';
+      floorLbl.textContent      = this.currentInstance?.measurement_type === 'duration'
+        ? 'Duration held (m:ss, m:ss.ms, or h:mm:ss)' : 'Latency (m:ss, m:ss.ms, or h:mm:ss)';
       floorEl.placeholder       = 'e.g. 0:30 or 0:00.8';
     } else if (!isLine) {
       successesEl.disabled     = false;
@@ -442,7 +477,7 @@ class Dashboard {
     }
     let successes = null, errors = null;
     if (!this.chart._isLineType(type)) {
-      const isTiming = this._isTimingType(type);
+      const isTiming = this._isTimingType();
       if (isTiming && this.chart.chartType === 'count_per_day') {
         this._showFeedback('Duration/latency entries need a chart type other than "Count Per Day".', true); return null;
       }
@@ -474,8 +509,8 @@ class Dashboard {
   async _addEntry() {
     if (this._editingIndex !== null) { await this._saveEdit(); return; }
 
-    if (!this.currentBehaviorId) {
-      this._showFeedback('Select a behavior from the sidebar first.', true);
+    if (!this.currentInstanceId) {
+      this._showFeedback('Select a pinpoint from the sidebar first.', true);
       return;
     }
 
@@ -486,15 +521,15 @@ class Dashboard {
     this._setLoading(true);
     try {
       if (this.chart._isLineType(type)) {
-        const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type, day, val: null, note, floor: null });
+        const saved = await DB.points.add({ instance_id: this.currentInstanceId, type, day, val: null, note, floor: null });
         this.chart.points.push({ id: saved.id, type, day, val: null, note, floor: null, px: this.chart.xL(day), py: null });
       } else {
         if (successes) {
-          const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type: 'dot', day, val: successes.val, note, floor: successes.floor });
+          const saved = await DB.points.add({ instance_id: this.currentInstanceId, type: 'dot', day, val: successes.val, note, floor: successes.floor });
           this.chart.points.push({ id: saved.id, type: 'dot', day, val: successes.val, note, floor: successes.floor, px: this.chart.xP(day), py: this.chart.yP(successes.val) });
         }
         if (errors) {
-          const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type: 'x', day, val: errors.val, note, floor: errors.floor });
+          const saved = await DB.points.add({ instance_id: this.currentInstanceId, type: 'x', day, val: errors.val, note, floor: errors.floor });
           this.chart.points.push({ id: saved.id, type: 'x', day, val: errors.val, note, floor: errors.floor, px: this.chart.xP(day), py: this.chart.yP(errors.val) });
         }
       }
@@ -528,15 +563,15 @@ class Dashboard {
       if (old.id) await DB.points.delete(old.id);
       this.chart.removePoint(this._editingIndex);
       if (this.chart._isLineType(type)) {
-        const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type, day, val: null, note, floor: null });
+        const saved = await DB.points.add({ instance_id: this.currentInstanceId, type, day, val: null, note, floor: null });
         this.chart.points.push({ id: saved.id, type, day, val: null, note, floor: null, px: this.chart.xL(day), py: null });
       } else {
         if (successes) {
-          const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type: 'dot', day, val: successes.val, note, floor: successes.floor });
+          const saved = await DB.points.add({ instance_id: this.currentInstanceId, type: 'dot', day, val: successes.val, note, floor: successes.floor });
           this.chart.points.push({ id: saved.id, type: 'dot', day, val: successes.val, note, floor: successes.floor, px: this.chart.xP(day), py: this.chart.yP(successes.val) });
         }
         if (errors) {
-          const saved = await DB.points.add({ behavior_id: this.currentBehaviorId, domain_id: this.currentDomainId, type: 'x', day, val: errors.val, note, floor: errors.floor });
+          const saved = await DB.points.add({ instance_id: this.currentInstanceId, type: 'x', day, val: errors.val, note, floor: errors.floor });
           this.chart.points.push({ id: saved.id, type: 'x', day, val: errors.val, note, floor: errors.floor, px: this.chart.xP(day), py: this.chart.yP(errors.val) });
         }
       }
@@ -664,11 +699,11 @@ class Dashboard {
   }
 
   async _clearAll() {
-    if (!this.currentBehaviorId) return;
-    if (!confirm('Clear all data for this behavior and domain?')) return;
+    if (!this.currentInstanceId) return;
+    if (!confirm('Clear all data for this pinpoint?')) return;
     this._setLoading(true);
     try {
-      await DB.points.clear(this.currentBehaviorId, this.currentDomainId);
+      await DB.points.clear(this.currentInstanceId);
       this.chart.clearPoints();
       this._renderEntries();
     } catch (err) {
@@ -769,10 +804,10 @@ class Dashboard {
     const sourceCanvas = document.getElementById('scc-canvas');
     if (!sourceCanvas) return;
 
-    const domainName = this.currentDomain ? this.domains[this.currentDomain] : 'Chart';
+    const instanceName = this.currentInstance?.name || 'Chart';
     const primaryLabel = this._context
-      ? [this._context.participantName, this._context.behaviorName, domainName].filter(Boolean).join(' › ')
-      : domainName;
+      ? [this._context.participantName, instanceName].filter(Boolean).join(' › ')
+      : instanceName;
 
     const rows = [{
       label: primaryLabel,

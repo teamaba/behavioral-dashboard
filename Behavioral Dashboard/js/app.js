@@ -32,12 +32,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     closeSidebar();
   }
 
-  function showChart(behaviorId, domainSlug, context) {
+  function showChart(instanceId, context) {
     window.hierarchyView.hide();
     appRoot.style.display = '';
-    window.dashboard.activate(behaviorId, domainSlug, context);
+    window.dashboard.activate(instanceId, context);
   }
   window.showHierarchyView = showHierarchy; // exposed so OverlayView's "Back" button can return here
+  window.showChart = showChart; // exposed so AddChartModal can jump straight into a newly created chart
 
   document.getElementById('btn-overview')
     .addEventListener('click', showHierarchy);
@@ -53,6 +54,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.overlayView = new OverlayView();
     window.overlayModal = new OverlayModal(window.dashboard, window.overlayView);
     window.exportReportModal = new ExportReportModal();
+    if (DB.auth.isStaff()) {
+      window.pinpointsLibrary  = new PinpointsLibrary();
+      window.pinpointFormModal = new PinpointFormModal();
+      window.addChartModal     = new AddChartModal();
+    }
     _renderUserBadge();
     window.inactivityMonitor = new InactivityMonitor(async () => {
       await DB.auth.signOut();
@@ -78,6 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         badge.innerHTML = `
           <span class="topbar-user-email">${profile.email}</span>
           <span class="role-tag">${profile.role}</span>
+          ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="btn-pinpoints">Pinpoints Library</button>' : ''}
           ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="btn-overlay">Overlay Charts</button>' : ''}
           ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="btn-report">Export Report</button>' : ''}
           <button class="hv-manage-btn" id="btn-export-image">Export Image</button>
@@ -86,6 +93,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
         const inviteBtn = document.getElementById('btn-invite');
         if (inviteBtn) inviteBtn.addEventListener('click', () => window.inviteModal.show());
+        const pinpointsBtn = document.getElementById('btn-pinpoints');
+        if (pinpointsBtn) pinpointsBtn.addEventListener('click', () => window.pinpointsLibrary.show());
         const overlayBtn = document.getElementById('btn-overlay');
         if (overlayBtn) overlayBtn.addEventListener('click', () => window.overlayModal.show());
         const reportBtn = document.getElementById('btn-report');
@@ -107,6 +116,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       hvBadge.innerHTML = `
         <span class="hv-user-email">${profile.email}</span>
         <span class="role-tag">${profile.role}</span>
+        ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="hv-btn-pinpoints">Pinpoints Library</button>' : ''}
         ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="hv-btn-overlay">Overlay Charts</button>' : ''}
         ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="hv-btn-report">Export Report</button>' : ''}
         ${DB.auth.isSupervisor() ? '<button class="hv-manage-btn" id="hv-btn-invite">Manage users</button>' : ''}
@@ -118,6 +128,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       const hvInvite = document.getElementById('hv-btn-invite');
       if (hvInvite) hvInvite.addEventListener('click', () => window.inviteModal.show());
+      const hvPinpoints = document.getElementById('hv-btn-pinpoints');
+      if (hvPinpoints) hvPinpoints.addEventListener('click', () => window.pinpointsLibrary.show());
       const hvOverlay = document.getElementById('hv-btn-overlay');
       if (hvOverlay) hvOverlay.addEventListener('click', () => window.overlayModal.show());
       const hvReport = document.getElementById('hv-btn-report');
