@@ -186,14 +186,13 @@ class Dashboard {
       metaFields.forEach(key => {
         const input = document.getElementById('meta-' + key.toLowerCase());
         if (input) {
-          let saved = meta && meta[key] != null && meta[key] !== '' ? meta[key] : null;
-          // First time this instance's chart_meta is created, the log/legend
-          // fields prefill from the pinpoint the instance was copied from.
-          if (saved == null) {
-            if (key === 'correct')   saved = instance.correct_label   || null;
-            if (key === 'incorrect') saved = instance.incorrect_label || null;
-            if (key === 'neutral')   saved = instance.neutral_label   || null;
-          }
+          // correct/incorrect/neutral are prefilled from the pinpoint ONCE, by
+          // addChartModal.js at instance-creation time (saved into chart_meta
+          // directly). Do not re-derive from instance.correct_label/etc. here —
+          // that would make chart_meta.correct un-clearable, since every load
+          // would silently overwrite a deliberately-blanked field right back to
+          // the pinpoint's value.
+          const saved = meta && meta[key] != null && meta[key] !== '' ? meta[key] : null;
           input.value = saved ?? '';
           this.chart.setMeta(key, input.value);
         }
