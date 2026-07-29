@@ -239,14 +239,17 @@ class AddChartModal {
     btn.disabled = true;
     try {
       const instance = await DB.participantPinpoints.add(this._participant.id, fields);
-      // Prefill the chart's legend fields, aim band, and (for timing
-      // measurements) the default marker shape — latency defaults to "/",
-      // duration to "\" — immediately so they're not blank the first time
-      // the chart is opened. DB.meta.upsert is the same fetch-then-write
-      // helper Dashboard uses for the meta-grid, so this stays editable there.
-      const metaPrefill = {
-        correct: fields.correct_label, incorrect: fields.incorrect_label, neutral: fields.neutral_label
-      };
+      // Prefill the aim band and (for timing measurements) the default marker
+      // shape — latency defaults to "/", duration to "\" — immediately so
+      // they're not blank the first time the chart is opened. DB.meta.upsert
+      // is the same fetch-then-write helper Dashboard uses for the meta-grid,
+      // so this stays editable there.
+      //
+      // Deliberately NOT prefilling correct/incorrect/neutral here — the
+      // chart's Legend labels are independent of the pinpoint's own labels
+      // by design and must always start blank, same as footer_correct/
+      // footer_incorrect. Staff fill them in per chart via the meta grid.
+      const metaPrefill = {};
       if (measurement_type === 'latency')  metaPrefill.dotShape = 'slash';
       if (measurement_type === 'duration') metaPrefill.dotShape = 'backslash';
       // The chart engine reads meta.goal (Program Review's Goal field) to
