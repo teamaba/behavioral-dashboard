@@ -36,43 +36,10 @@ body {
   color: #005580;
 }
 
-.sidebar-subtitle {
-  font-size: 11px;
-  color: #0099cc;
-  margin-top: 2px;
-}
-
 .sidebar-nav {
   padding: 10px 8px;
   flex: 1;
 }
-
-.nav-section-label {
-  font-size: 10px;
-  font-weight: bold;
-  color: #99c8d8;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 8px 8px 4px;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 4px;
-  font-size: 13px;
-  color: #336677;
-  text-decoration: none;
-  margin: 1px 0;
-  transition: background 0.1s;
-}
-
-.nav-item:hover { background: #e8f7fc; color: #005580; }
-.nav-item.active { background: #d0f0fa; color: #005580; font-weight: bold; }
-
-.nav-icon { font-size: 10px; color: #0099cc; }
 
 /* ── Main ── */
 .main {
@@ -182,8 +149,10 @@ body {
   overflow-y: auto;
 }
 
+/* Section headers must never be smaller than the content inside them
+   (e.g. .review-stat-dot at 13px in Program Review) — kept at 14px. */
 .section-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: bold;
   color: #0099cc;
   text-transform: uppercase;
@@ -244,38 +213,6 @@ body {
 }
 
 /* ── Fluency aim box ── */
-.aim-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  background: #fffef0;
-  border: 1px solid #e8d400;
-  border-radius: 5px;
-}
-
-.aim-label {
-  font-size: 9px;
-  font-weight: bold;
-  color: #7a6600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-
-.aim-input {
-  width: 76px;
-  font-size: 12px;
-  padding: 3px 7px;
-  border: 1px solid #e8d400;
-  border-radius: 3px;
-  color: #443300;
-  background: #fffff8;
-  font-family: Arial, sans-serif;
-  outline: none;
-}
-.aim-input:focus { border-color: #bb9900; background: #fff; }
-
 /* ── Program Review ── */
 .review-panel {
   display: flex;
@@ -641,48 +578,12 @@ body {
   max-width: 172px;
   height: auto;
 }
-.nav-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: #0099cc;
-  flex-shrink: 0;
-  opacity: 0.4;
-}
-.nav-item.active .nav-dot { opacity: 1; }
-
 /* ── Meta / chart info section ── */
 .meta-section {
   background: #fff;
   border: 1px solid #d0e8f0;
   border-radius: 6px;
   padding: 14px 16px;
-}
-.meta-readonly-section {
-  background: #fff;
-  border: 1px solid #d0e8f0;
-  border-radius: 6px;
-  padding: 14px 16px;
-}
-.meta-ro-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px 14px;
-  margin-top: 10px;
-}
-.meta-ro-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.meta-ro-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  color: #6b8fa8;
-  letter-spacing: 0.04em;
-}
-.meta-ro-value {
-  font-size: 13px;
-  color: #1a2a3a;
 }
 .meta-grid {
   display: grid;
@@ -1120,14 +1021,44 @@ body {
 /* Team section */
 .hv-team { display: flex; flex-direction: column; gap: 12px; }
 
+/* Section headers must never be smaller than the content they contain
+   (team > participant card > pinpoint chart button, throughout this page). */
 .hv-team-name {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: bold;
   color: #0099cc;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding-bottom: 6px;
   border-bottom: 2px solid #d0e8f0;
+}
+
+/* Entry point into the Pinpoints Library, top of the hierarchy home page */
+.hv-pinpoints-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 18px;
+  margin-bottom: 18px;
+  background: #f0f8fc;
+  border: 1px solid #aadcf0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  transition: background 0.1s, border-color 0.1s;
+}
+.hv-pinpoints-banner:hover { background: #d8f2fc; border-color: #0099cc; }
+.hv-pinpoints-banner-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: #005580;
+}
+.hv-pinpoints-banner-sub {
+  font-size: 11px;
+  color: #5a8a9a;
 }
 
 /* Participant cards row */
@@ -1170,8 +1101,9 @@ body {
   display: inline-block;
 }
 
+/* Must stay bigger than .hv-add-btn (14px, "+ Add Chart" nested under it). */
 .hv-card-name {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: bold;
   color: #003344;
   flex: 1;
@@ -1243,22 +1175,8 @@ body {
   background: #efffee;
 }
 
-/* Behavior rows inside a card */
+/* Pinpoint chart rows inside a card */
 .hv-behaviors { display: flex; flex-direction: column; gap: 10px; }
-
-.hv-behavior-row { display: flex; flex-direction: column; gap: 5px; }
-
-.hv-behavior-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.hv-behavior-name {
-  font-size: 12px;
-  font-weight: bold;
-  color: #336677;
-}
 
 .hv-del-beh {
   background: none;
@@ -1272,47 +1190,18 @@ body {
   opacity: 0;
   transition: opacity 0.1s;
 }
-.hv-behavior-label:hover .hv-del-beh { opacity: 1; }
+.hv-pinpoint-row:hover .hv-del-beh { opacity: 1; }
 .hv-del-beh:hover { background: #ffeaea; }
 
-/* Domain chip buttons */
-.hv-domain-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.hv-domain-btn {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 20px;
-  border: 1px solid #b0d8ee;
-  background: #f7fdff;
-  color: #005580;
-  cursor: pointer;
-  font-family: Arial, sans-serif;
-  transition: background 0.1s, border-color 0.1s;
-  white-space: nowrap;
-}
-.hv-domain-btn:hover { background: #d0f0fa; border-color: #0099cc; }
-
-.hv-domain-btn--recent {
-  background: #d0f0fa;
-  border-color: #0099cc;
-  font-weight: bold;
-}
-.hv-domain-btn--recent::before {
-  content: '';
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #0099cc;
-  margin-right: 5px;
-  vertical-align: middle;
-  position: relative;
-  top: -1px;
-}
+/* Per-participant pinpoint table rows — reuses .pl-pinpoint-table/-name/-type-tag
+   from the Pinpoints Library (same visual pattern), just with its own row
+   class since these rows also carry a delete action + has-data marker. */
+.hv-pinpoint-row { cursor: pointer; transition: background 0.1s; }
+.hv-pinpoint-row:hover { background: #f0f8fc; }
+/* Left accent bar = this chart has at least one logged data point; no bar = empty. */
+.hv-pinpoint-row--has-data { box-shadow: inset 3px 0 0 #0099cc; }
+.hv-pinpoint-row--has-data .pl-pinpoint-name { color: #0099cc; }
+.hv-pinpoint-actions { width: 28px; text-align: right; }
 
 /* Add behavior row */
 .hv-add-row {
@@ -1373,11 +1262,7 @@ body {
   padding-top: 8px;
   border-top: 1px dashed #d0e8f0;
 }
-.hv-add-participant-row .hv-add-part-name,
-.hv-add-participant-row .hv-add-part-email {
-  flex: 1 1 120px;
-  min-width: 0;
-}
+.hv-add-participant-row .hv-add-part-name { flex: 1 1 140px; }
 
 /* ── Supervisor panel ── */
 .hv-supervisor-panel {
@@ -1405,13 +1290,6 @@ body {
   padding-bottom: 6px;
   border-bottom: 1px solid #d0e8f0;
   margin: 0;
-}
-
-.hv-sup-desc {
-  font-size: 11px;
-  color: #5a8a9a;
-  margin: 0;
-  line-height: 1.5;
 }
 
 .hv-add-team-row {
@@ -1619,10 +1497,11 @@ body {
   line-height: 1;
 }
 
-/* Team header */
+/* Team header — must stay bigger than .tree-participant-name nested inside
+   it; section headers are never smaller than their own contents. */
 .tree-team { margin-bottom: 2px; }
 .tree-team-name {
-  font-size: 11px;
+  font-size: 16px;
   font-weight: bold;
   color: #005580;
   text-transform: uppercase;
@@ -1632,8 +1511,10 @@ body {
 /* Participant header */
 .tree-participant { margin-left: 8px; }
 .tree-participant-hdr { padding: 5px 8px; }
+/* Must stay bigger than .tree-add-btn (14px, the "+ Add Chart" button
+   nested under it) — section headers never smaller than their contents. */
 .tree-participant-name {
-  font-size: 12px;
+  font-size: 15px;
   color: #003344;
   font-weight: bold;
 }
@@ -1642,20 +1523,8 @@ body {
 .tree-body { padding-left: 0; }
 .tree-participant .tree-body { padding-left: 6px; }
 
-/* Behavior row */
-.tree-behavior { position: relative; }
-.tree-behavior-hdr { padding: 4px 8px; }
-.tree-behavior-name {
-  font-size: 12px;
-  color: #336677;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Delete button inside behavior header */
+/* Shared delete-button base (revealed on hover by whichever row it's inside
+   — .tree-domain:hover, .pl-category > .tree-hdr:hover, etc.) */
 .tree-del {
   flex-shrink: 0;
   background: none;
@@ -1669,12 +1538,15 @@ body {
   opacity: 0;
   transition: opacity 0.1s;
 }
-.tree-behavior-hdr:hover .tree-del { opacity: 1; }
 .tree-del:hover { background: #ffeaea; }
+.tree-del:disabled { color: #b0c4cc; cursor: not-allowed; }
+.tree-del:disabled:hover { background: none; }
 
-/* Domain items */
-.tree-behavior .tree-body { padding-left: 22px; }
+/* Pinpoint chart instance items (leaf rows under a participant) */
 .tree-domain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: #336677;
   padding: 4px 10px;
@@ -1682,6 +1554,9 @@ body {
   cursor: pointer;
   transition: background 0.1s;
 }
+.tree-domain-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-domain .js-del-inst { opacity: 0; }
+.tree-domain:hover .js-del-inst { opacity: 1; }
 .tree-domain:hover { background: #e8f7fc; color: #005580; }
 .tree-domain--active {
   background: #d0f0fa;
@@ -1695,19 +1570,6 @@ body {
   gap: 4px;
   padding: 4px 8px 6px;
 }
-.tree-add-input {
-  flex: 1;
-  min-width: 0;
-  font-size: 11px;
-  padding: 4px 6px;
-  border: 1px solid #d0e8f0;
-  border-radius: 3px;
-  color: #003344;
-  background: #f7fdff;
-  font-family: Arial, sans-serif;
-  outline: none;
-}
-.tree-add-input:focus { border-color: #0099cc; }
 .tree-add-btn {
   flex-shrink: 0;
   font-size: 14px;
@@ -1768,34 +1630,136 @@ body.client-view .meta-section select {
    via the same staff-style Overview page as staff, so they still need this button. */
 body.client-only-view #btn-overview { display: none; }
 
-/* ── Client sidebar — flat behavior list with domain buttons ── */
-.client-behavior-group {
-  padding: 4px 8px 10px;
-  border-bottom: 1px solid #e8f4f8;
-}
-.client-behavior-group:last-child { border-bottom: none; }
-
-.client-behavior-label {
-  font-size: 10px;
+/* ── Pinpoints Library — category tree + pinpoint rows ── */
+.pl-category { margin-bottom: 4px; }
+.pl-category > .tree-hdr .tree-del { opacity: 0; }
+.pl-category > .tree-hdr:hover .tree-del { opacity: 1; }
+/* Add-category/subcategory inputs otherwise stretch (via .hv-add-input's
+   flex:1) to the full page width — cap them like .hv-add-team-row already
+   does, so the row stays compact and its "+" button sits next to the input
+   instead of stranded on the far right. */
+.pl-cat-input, .pl-subcat-input { max-width: 280px; }
+/* "+ New Pinpoint" and the subcategory row otherwise sit flush at the
+   category's left edge, unaligned with .pl-pinpoint-row's own 22px indent
+   (which lines pinpoints up under the chevron) — match that indent here too,
+   at every nesting depth (each subcategory is its own .pl-category). */
+.pl-category > .tree-body > .hv-add-row { padding-left: 22px; }
+/* Category header — kept bigger than everything nested inside it: pinpoint
+   rows (12px, .pl-pinpoint-table td), the type tag (9px), and the "+ New
+   Pinpoint"/"+ Add Category" buttons (14px, .hv-add-btn), at every depth. */
+.pl-category-name {
+  font-size: 16px;
   font-weight: bold;
   color: #005580;
+}
+/* Pinpoint list — a real table per folder, not floating pill buttons.
+   Indented to match .hv-add-row's 22px so it lines up under the chevron. */
+.pl-pinpoint-table {
+  width: 100%;
+  max-width: 560px;
+  margin: 4px 0 8px 22px;
+  border-collapse: collapse;
+  font-family: Arial, sans-serif;
+}
+/* Pinpoints Library rows carry 4 more columns (creator/created/last used/
+   clients) than the per-participant overview table, so they need more room. */
+.pl-pinpoint-table--wide { max-width: 900px; }
+.pl-pinpoint-table--wide th:not(:first-child):not(:nth-child(2)),
+.pl-pinpoint-table--wide td:not(:first-child):not(:nth-child(2)) {
+  font-size: 11px;
+  color: #5a8a9a;
+  white-space: nowrap;
+}
+.pl-pinpoint-table th {
+  text-align: left;
+  font-size: 9px;
+  font-weight: bold;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 6px 2px 5px;
+  letter-spacing: 0.05em;
+  color: #6a9bb0;
+  padding: 3px 10px 5px;
+  border-bottom: 1px solid #b0d8ee;
+}
+.pl-pinpoint-table th:last-child { width: 100px; }
+.pl-pinpoint-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #eef7fb;
+  font-size: 12px;
+  vertical-align: middle;
+}
+.pl-pinpoint-row { cursor: pointer; transition: background 0.1s; }
+.pl-pinpoint-row:hover { background: #f0f8fc; }
+.pl-pinpoint-row:last-child td { border-bottom: none; }
+.pl-pinpoint-name { color: #005580; font-weight: bold; }
+.pl-pinpoint-type-tag {
+  font-size: 9px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6a3d9a;
+  background: #f5eeff;
+  border: 1px solid #ddc8f5;
+  border-radius: 3px;
+  padding: 2px 6px;
 }
 
-.client-domain-btn {
-  display: block;
-  width: 100%;
-  margin: 2px 0;
-  padding: 8px 10px;
-  border-radius: 4px;
-  font-size: 12px;
-  text-align: left;
-  background: #f0f8fc;
-  border: 1px solid #d0e8f0;
-  color: #336677;
-  cursor: pointer;
+/* ── Pinpoint form (create/edit) and View Pinpoint summary ──
+   (.pf-form-card's max-width override lives in login.css, after
+   .overlay-modal-card, since login.css loads after main.css) */
+.pf-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px 14px;
+  margin-bottom: 16px;
 }
-.client-domain-btn:hover { background: #d8f2fc; color: #005580; border-color: #aadcf0; }
-.client-domain-btn.tree-domain--active { background: #0099cc; color: #fff; border-color: #0099cc; font-weight: bold; }
+.pf-form-grid-full { grid-column: 1 / -1; }
+.pf-form-grid textarea {
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid #0099cc;
+  border-radius: 3px;
+  color: #003344;
+  background: #f7fdff;
+  font-family: Arial, sans-serif;
+  resize: vertical;
+}
+.pf-checkbox-group { justify-content: flex-end; }
+.pf-checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: normal;
+  text-transform: none;
+  color: #003344;
+  letter-spacing: normal;
+}
+.pf-summary { margin-bottom: 16px; }
+.pf-summary-title { color: #005580; margin: 0 0 12px; font-size: 18px; }
+.pf-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid #eef7fb;
+  font-size: 12px;
+}
+.pf-summary-label { color: #0099cc; font-weight: bold; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
+.pf-summary-val { color: #003344; text-align: right; }
+
+.pf-clients-details { padding: 8px 0 2px; }
+.pf-clients-details summary {
+  cursor: pointer;
+  color: #0099cc;
+  font-weight: bold;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.pf-clients-list { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #003344; }
+.pf-clients-list li { padding: 2px 0; }
+.pf-clients-empty { margin: 8px 0 0; font-size: 12px; color: #99c8d8; }
+
+@media (max-width: 640px) {
+  .pf-form-grid { grid-template-columns: 1fr; }
+}

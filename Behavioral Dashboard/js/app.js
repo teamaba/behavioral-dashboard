@@ -32,12 +32,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     closeSidebar();
   }
 
-  function showChart(behaviorId, domainSlug, context) {
+  function showChart(instanceId, context) {
     window.hierarchyView.hide();
     appRoot.style.display = '';
-    window.dashboard.activate(behaviorId, domainSlug, context);
+    window.dashboard.activate(instanceId, context);
   }
   window.showHierarchyView = showHierarchy; // exposed so OverlayView's "Back" button can return here
+  window.showChart = showChart; // exposed so AddChartModal can jump straight into a newly created chart
 
   document.getElementById('btn-overview')
     .addEventListener('click', showHierarchy);
@@ -53,6 +54,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.overlayView = new OverlayView();
     window.overlayModal = new OverlayModal(window.dashboard, window.overlayView);
     window.exportReportModal = new ExportReportModal();
+    if (DB.auth.isStaff()) {
+      window.pinpointsLibrary  = new PinpointsLibrary();
+      window.pinpointFormModal = new PinpointFormModal();
+      window.addChartModal     = new AddChartModal();
+    }
     _renderUserBadge();
     window.inactivityMonitor = new InactivityMonitor(async () => {
       await DB.auth.signOut();

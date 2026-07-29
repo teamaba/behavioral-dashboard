@@ -29,17 +29,6 @@
   margin: 0 auto 20px;
 }
 
-.login-tagline {
-  font-size: 11px;
-  color: #0099cc;
-  font-weight: bold;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  text-align: center;
-  margin-top: 3px;
-  margin-bottom: 24px;
-}
-
 .login-mode-label {
   font-size: 13px;
   font-weight: bold;
@@ -281,7 +270,9 @@
 
 /* ── Overlay charts modal ── */
 #overlay-modal-overlay,
-#export-report-modal-overlay {
+#export-report-modal-overlay,
+#pinpoint-form-overlay,
+#add-chart-modal-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 51, 68, 0.45);
@@ -292,7 +283,9 @@
   padding: 24px;
 }
 #overlay-modal-overlay.hidden,
-#export-report-modal-overlay.hidden { display: none; }
+#export-report-modal-overlay.hidden,
+#pinpoint-form-overlay.hidden,
+#add-chart-modal-overlay.hidden { display: none; }
 
 .overlay-modal-card {
   position: relative;
@@ -300,6 +293,8 @@
   max-height: 88vh;
   overflow-y: auto;
 }
+
+.pf-form-card { max-width: 760px; }
 
 .overlay-primary-section {
   margin-bottom: 14px;
@@ -421,12 +416,12 @@
 .overlay-modal-actions .overlay-view-btn { margin-top: 0; flex: 1; }
 
 /* ── Export Progress Report modal ── */
-.report-athlete-selects {
+.report-participant-selects {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 6px;
 }
-.report-athlete-selects .invite-select { font-size: 12px; padding: 6px 8px; }
+.report-participant-selects .invite-select { font-size: 12px; padding: 6px 8px; }
 
 .report-skill-checks {
   max-height: 180px;

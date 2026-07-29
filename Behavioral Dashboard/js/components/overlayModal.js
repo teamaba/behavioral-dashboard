@@ -13,10 +13,9 @@ class OverlayModal {
     this.overlayView = overlayView; // owns the SCCChart instance that actually renders the comparison
     this._teams        = [];
     this._participants = [];
-    this._behaviors     = [];
-    this._domains       = [];
+    this._instances     = [];
     this._loaded        = false;
-    this._overlaySel = [null, null, null]; // remembered dropdown picks: { behaviorId, domainId }
+    this._overlaySel = [null, null, null]; // remembered dropdown picks: { instanceId }
     this._render();
   }
 
@@ -34,16 +33,14 @@ class OverlayModal {
   hide() { this.overlay.classList.add('hidden'); }
 
   async _loadHierarchy() {
-    const [teams, participants, behaviors, domains] = await Promise.all([
+    const [teams, participants, instances] = await Promise.all([
       DB.teams.getAll(),
       DB.participants.getAll(),
-      DB.behaviors.getAll(),
-      DB.domains.getAll(),
+      DB.participantPinpoints.getAll(),
     ]);
     this._teams = teams || [];
     this._participants = participants || [];
-    this._behaviors = behaviors || [];
-    this._domains = domains || [];
+    this._instances = instances || [];
     this._loaded = true;
   }
 
@@ -59,8 +56,7 @@ class OverlayModal {
           <div class="overlay-slot-selects">
             <select class="invite-select" id="overlay-primary-team"></select>
             <select class="invite-select" id="overlay-primary-participant"></select>
-            <select class="invite-select" id="overlay-primary-behavior"></select>
-            <select class="invite-select" id="overlay-primary-domain"></select>
+            <select class="invite-select" id="overlay-primary-instance"></select>
           </div>
         </div>
 
@@ -103,41 +99,36 @@ class OverlayModal {
   _bindPrimarySelects() {
     const teamSel = document.getElementById('overlay-primary-team');
     const partSel = document.getElementById('overlay-primary-participant');
-    const behSel  = document.getElementById('overlay-primary-behavior');
 
     teamSel?.addEventListener('change', () => {
       partSel.innerHTML = this._participantOptionsHTML(teamSel.value, '');
-      behSel.innerHTML  = this._behaviorOptionsHTML('', '');
+      document.getElementById('overlay-primary-instance').innerHTML = this._instanceOptionsHTML('', '');
     });
     partSel?.addEventListener('change', () => {
-      behSel.innerHTML = this._behaviorOptionsHTML(partSel.value, '');
+      document.getElementById('overlay-primary-instance').innerHTML = this._instanceOptionsHTML(partSel.value, '');
     });
   }
 
   _renderPrimarySelects() {
     const teamSel = document.getElementById('overlay-primary-team');
     const partSel = document.getElementById('overlay-primary-participant');
-    const behSel  = document.getElementById('overlay-primary-behavior');
-    const domSel  = document.getElementById('overlay-primary-domain');
+    const instSel = document.getElementById('overlay-primary-instance');
     if (!teamSel) return;
 
     // Default to whatever chart is currently loaded on the dashboard, if any.
-    let selTeamId = '', selParticipantId = '', selBehaviorId = '', selDomainId = '';
-    const bid = this.dashboard?.currentBehaviorId;
-    const did = this.dashboard?.currentDomainId;
-    if (bid && did) {
-      const behavior    = this._behaviors.find(b => String(b.id) === String(bid));
-      const participant = behavior ? this._participants.find(p => String(p.id) === String(behavior.participant_id)) : null;
-      selBehaviorId    = bid;
-      selDomainId      = did;
+    let selTeamId = '', selParticipantId = '', selInstanceId = '';
+    const iid = this.dashboard?.currentInstanceId;
+    if (iid) {
+      const instance     = this._instances.find(i => String(i.id) === String(iid));
+      const participant  = instance ? this._participants.find(p => String(p.id) === String(instance.participant_id)) : null;
+      selInstanceId    = iid;
       selParticipantId = participant ? participant.id : '';
       selTeamId        = participant ? participant.team_id : '';
     }
 
     teamSel.innerHTML = this._teamOptionsHTML(selTeamId);
     partSel.innerHTML = this._participantOptionsHTML(selTeamId, selParticipantId);
-    behSel.innerHTML  = this._behaviorOptionsHTML(selParticipantId, selBehaviorId);
-    domSel.innerHTML  = this._domainOptionsHTML(selDomainId);
+    instSel.innerHTML = this._instanceOptionsHTML(selParticipantId, selInstanceId);
 
     const alignSel = document.getElementById('overlay-align-select');
     if (alignSel) alignSel.value = this.overlayView.chart.overlayAlign;
@@ -153,20 +144,18 @@ class OverlayModal {
   }
 
   _slotHTML(i, sel) {
-    let selTeamId = '', selParticipantId = '', selBehaviorId = '', selDomainId = '';
+    let selTeamId = '', selParticipantId = '', selInstanceId = '';
     if (sel) {
-      const behavior = this._behaviors.find(b => String(b.id) === String(sel.behaviorId));
-      const participant = behavior ? this._participants.find(p => String(p.id) === String(behavior.participant_id)) : null;
-      selBehaviorId    = sel.behaviorId;
-      selDomainId      = sel.domainId;
+      const instance    = this._instances.find(i2 => String(i2.id) === String(sel.instanceId));
+      const participant = instance ? this._participants.find(p => String(p.id) === String(instance.participant_id)) : null;
+      selInstanceId    = sel.instanceId;
       selParticipantId = participant ? participant.id : '';
       selTeamId        = participant ? participant.team_id : '';
     }
 
     const teamOptions        = this._teamOptionsHTML(selTeamId);
     const participantOptions = this._participantOptionsHTML(selTeamId, selParticipantId);
-    const behaviorOptions    = this._behaviorOptionsHTML(selParticipantId, selBehaviorId);
-    const domainOptions      = this._domainOptionsHTML(selDomainId);
+    const instanceOptions    = this._instanceOptionsHTML(selParticipantId, selInstanceId);
 
     return `
       <div class="overlay-slot" data-slot="${i}">
@@ -177,8 +166,7 @@ class OverlayModal {
         <div class="overlay-slot-selects">
           <select class="invite-select overlay-sel-team" data-slot="${i}">${teamOptions}</select>
           <select class="invite-select overlay-sel-participant" data-slot="${i}">${participantOptions}</select>
-          <select class="invite-select overlay-sel-behavior" data-slot="${i}">${behaviorOptions}</select>
-          <select class="invite-select overlay-sel-domain" data-slot="${i}">${domainOptions}</select>
+          <select class="invite-select overlay-sel-instance" data-slot="${i}">${instanceOptions}</select>
         </div>
       </div>`;
   }
@@ -186,12 +174,6 @@ class OverlayModal {
   _teamOptionsHTML(selectedId) {
     const opts = ['<option value="">Team…</option>'];
     this._teams.forEach(t => opts.push(`<option value="${t.id}"${String(t.id) === String(selectedId) ? ' selected' : ''}>${_esc(t.name)}</option>`));
-    return opts.join('');
-  }
-
-  _domainOptionsHTML(selectedId) {
-    const opts = ['<option value="">Domain…</option>'];
-    this._domains.forEach(d => opts.push(`<option value="${d.id}"${String(d.id) === String(selectedId) ? ' selected' : ''}>${_esc(d.name)}</option>`));
     return opts.join('');
   }
 
@@ -203,11 +185,11 @@ class OverlayModal {
     return opts.join('');
   }
 
-  _behaviorOptionsHTML(participantId, selectedId) {
-    const opts = ['<option value="">Behavior…</option>'];
-    this._behaviors
-      .filter(b => !participantId || String(b.participant_id) === String(participantId))
-      .forEach(b => opts.push(`<option value="${b.id}"${String(b.id) === String(selectedId) ? ' selected' : ''}>${_esc(b.name)}</option>`));
+  _instanceOptionsHTML(participantId, selectedId) {
+    const opts = ['<option value="">Pinpoint…</option>'];
+    this._instances
+      .filter(i => !participantId || String(i.participant_id) === String(participantId))
+      .forEach(i => opts.push(`<option value="${i.id}"${String(i.id) === String(selectedId) ? ' selected' : ''}>${_esc(i.name)}</option>`));
     return opts.join('');
   }
 
@@ -215,26 +197,24 @@ class OverlayModal {
     const wrap = document.getElementById('overlay-slots');
     const teamSel   = wrap.querySelector(`.overlay-sel-team[data-slot="${i}"]`);
     const partSel   = wrap.querySelector(`.overlay-sel-participant[data-slot="${i}"]`);
-    const behSel    = wrap.querySelector(`.overlay-sel-behavior[data-slot="${i}"]`);
-    const domSel    = wrap.querySelector(`.overlay-sel-domain[data-slot="${i}"]`);
+    const instSel    = wrap.querySelector(`.overlay-sel-instance[data-slot="${i}"]`);
     const removeBtn = wrap.querySelector(`.overlay-slot-remove[data-slot="${i}"]`);
 
     const recordSelection = () => {
-      const bid = behSel.value, did = domSel.value;
-      this._overlaySel[i] = (bid && did) ? { behaviorId: bid, domainId: did } : null;
+      const iid = instSel.value;
+      this._overlaySel[i] = iid ? { instanceId: iid } : null;
     };
 
     teamSel?.addEventListener('change', () => {
       partSel.innerHTML = this._participantOptionsHTML(teamSel.value, '');
-      behSel.innerHTML  = this._behaviorOptionsHTML('', '');
+      instSel.innerHTML  = this._instanceOptionsHTML('', '');
       recordSelection();
     });
     partSel?.addEventListener('change', () => {
-      behSel.innerHTML = this._behaviorOptionsHTML(partSel.value, '');
+      instSel.innerHTML = this._instanceOptionsHTML(partSel.value, '');
       recordSelection();
     });
-    behSel?.addEventListener('change', recordSelection);
-    domSel?.addEventListener('change', recordSelection);
+    instSel?.addEventListener('change', recordSelection);
     removeBtn?.addEventListener('click', () => {
       this._overlaySel[i] = null;
       this._renderSlots();
@@ -244,32 +224,30 @@ class OverlayModal {
   // ── View overlay ──────────────────────────────────────────────────────────
 
   async _onViewOverlay() {
-    const bid = document.getElementById('overlay-primary-behavior')?.value;
-    const did = document.getElementById('overlay-primary-domain')?.value;
-    if (!bid || !did) { this._feedback('Choose a primary chart first.', true); return; }
+    const iid = document.getElementById('overlay-primary-instance')?.value;
+    if (!iid) { this._feedback('Choose a primary chart first.', true); return; }
 
-    const resolve = (behaviorId, domainId) => {
-      const behavior    = this._behaviors.find(b => String(b.id) === String(behaviorId));
-      const participant = behavior ? this._participants.find(p => String(p.id) === String(behavior.participant_id)) : null;
-      const domain      = this._domains.find(d => String(d.id) === String(domainId));
-      const label = [participant?.name, behavior?.name, domain?.name].filter(Boolean).join(' › ');
-      return { behavior, participant, domain, label };
+    const resolve = instanceId => {
+      const instance    = this._instances.find(i => String(i.id) === String(instanceId));
+      const participant = instance ? this._participants.find(p => String(p.id) === String(instance.participant_id)) : null;
+      const label = [participant?.name, instance?.name].filter(Boolean).join(' › ');
+      return { instance, participant, label };
     };
 
-    const primaryInfo = resolve(bid, did);
-    if (!primaryInfo.behavior || !primaryInfo.domain) { this._feedback('Could not resolve the primary selection.', true); return; }
+    const primaryInfo = resolve(iid);
+    if (!primaryInfo.instance) { this._feedback('Could not resolve the primary selection.', true); return; }
 
     const overlaySlots = this._overlaySel
-      .map((sel, i) => sel ? { i, sel, info: resolve(sel.behaviorId, sel.domainId) } : null)
+      .map((sel, i) => sel ? { i, sel, info: resolve(sel.instanceId) } : null)
       .filter(Boolean);
 
     this._feedback('Loading charts…', false);
     try {
       const [primaryPoints, primaryMeta, ...overlayResults] = await Promise.all([
-        DB.points.get(bid, did),
-        DB.meta.get(bid, did),
-        ...overlaySlots.map(s => DB.points.get(s.sel.behaviorId, s.sel.domainId)),
-        ...overlaySlots.map(s => DB.meta.get(s.sel.behaviorId, s.sel.domainId)),
+        DB.points.get(iid),
+        DB.meta.get(iid),
+        ...overlaySlots.map(s => DB.points.get(s.sel.instanceId)),
+        ...overlaySlots.map(s => DB.meta.get(s.sel.instanceId)),
       ]);
 
       const overlayPointsList = overlayResults.slice(0, overlaySlots.length);
@@ -280,9 +258,9 @@ class OverlayModal {
       overlaySlots.forEach((s, idx) => {
         const colors = palette[s.i] || { dot: '#8e44ad', x: '#e67e22', aim: '#c2185b' };
         overlays[s.i] = {
-          behaviorId: s.sel.behaviorId,
-          domainId: s.sel.domainId,
+          instanceId: s.sel.instanceId,
           label: s.info.label,
+          measurementType: s.info.instance.measurement_type,
           rawPoints: (overlayPointsList[idx] || []).map(p => ({
             type: p.type, day: p.day, val: p.val, note: p.note, floor: p.floor || null,
           })),
@@ -301,6 +279,7 @@ class OverlayModal {
 
       const primary = {
         label: primaryInfo.label,
+        measurementType: primaryInfo.instance.measurement_type,
         points: (primaryPoints || []).map(p => ({
           id: p.id, type: p.type, day: p.day, val: p.val, note: p.note, floor: p.floor || null,
         })),
@@ -334,7 +313,8 @@ class OverlayModal {
       [21, 8], [25, 6], [28, 5], [32, 4], [35, 3],
     ];
     const primary = {
-      label: 'Demo — Jordan P. › Sight Word Fluency › Movement Fluency',
+      label: 'Demo — Jordan P. › Sight Word Fluency',
+      measurementType: 'frequency',
       points: [
         ...primaryDots.map(([day, val], idx) => mk('dot', day, val, idx === 0 ? 'Baseline session' : '')),
         ...primaryErrs.map(([day, val]) => mk('x', day, val)),
@@ -363,8 +343,9 @@ class OverlayModal {
     ];
     const colors = this.overlayView.chart.OVERLAY_PALETTE[0] || { dot: '#8e44ad', x: '#e67e22', aim: '#c2185b' };
     const overlay = {
-      behaviorId: 'demo-2', domainId: 'demo-2',
-      label: 'Demo — Casey M. › Sight Word Fluency › Movement Fluency',
+      instanceId: 'demo-2',
+      label: 'Demo — Casey M. › Sight Word Fluency',
+      measurementType: 'frequency',
       rawPoints: [
         ...overlayDots.map(([day, val]) => mk('dot', day, val)),
         ...overlayErrs.map(([day, val]) => mk('x', day, val)),

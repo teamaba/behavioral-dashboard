@@ -34,8 +34,8 @@ class OverlayView {
   }
 
   /**
-   * primary: { points, meta, label }
-   * overlays: array (up to 3, may contain gaps) of { behaviorId, domainId, label, rawPoints, ownMeta, style }
+   * primary: { points, meta, label, measurementType }
+   * overlays: array (up to 3, may contain gaps) of { instanceId, label, measurementType, rawPoints, ownMeta, style }
    * overlayAlign: 'relative' | 'calendar'
    */
   show(primary, overlays, overlayAlign) {
@@ -43,6 +43,7 @@ class OverlayView {
     document.getElementById('overlay-view-title').textContent = primary.label;
 
     this.chart.points = primary.points;
+    this.chart.setMeasurementType(primary.measurementType || 'frequency');
     this.chart.meta   = Object.assign({
       dotColor: '#009933', dotShape: 'circle',
       xColor:   '#cc0000', xShape:   'x',
