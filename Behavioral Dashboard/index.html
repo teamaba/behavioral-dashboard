@@ -82,7 +82,7 @@
       <img src="img/logo.png" alt="Team ABA" class="hv-logo">
       <div>
         <div class="hv-eyebrow">Pinpoints Library</div>
-        <div class="hv-subtitle">Reusable pinpoint templates, organized by category</div>
+        <div class="hv-subtitle">Reusable pinpoint templates, organized by folder</div>
       </div>
       <div class="hv-search-wrap">
         <input type="search" id="pl-search" class="hv-search-input" placeholder="Search pinpoints&#8230;">
@@ -250,7 +250,7 @@
                       <option value="">—</option>
                       <option value="Acceleration">Acceleration</option>
                       <option value="Deceleration">Deceleration</option>
-                      <option value="Both">Both</option>
+                      <option value="Both" id="review-goal-both-option">Both</option>
                     </select>
                   </td>
                 </tr>
@@ -266,8 +266,8 @@
 
               <div class="review-markers">
                 <div class="review-marker-row"><span class="review-marker-sym" id="review-dot-sym">●</span><span id="review-correct-label">correct responses</span></div>
-                <div class="review-marker-row"><span class="review-marker-sym" id="review-x-sym">×</span><span id="review-incorrect-label">incorrect responses</span></div>
-                <div class="review-marker-row"><span class="review-marker-sym">—</span><span>counting time</span></div>
+                <div class="review-marker-row" id="review-x-marker-row"><span class="review-marker-sym" id="review-x-sym">×</span><span id="review-incorrect-label">incorrect responses</span></div>
+                <div class="review-marker-row" id="review-floor-marker-row"><span class="review-marker-sym">—</span><span>counting time</span></div>
               </div>
 
               <div class="review-block-title">CURRENT CONDITION</div>
@@ -370,16 +370,24 @@
               <input type="text" id="meta-timer" data-meta="timer" placeholder="">
             </div>
             <div class="field-group">
-              <label for="meta-correct">Correct responses label</label>
+              <label for="meta-correct">Correct responses label (legend)</label>
               <input type="text" id="meta-correct" data-meta="correct" placeholder="e.g. Words read correctly">
             </div>
             <div class="field-group">
-              <label for="meta-incorrect">Incorrect responses label</label>
+              <label for="meta-incorrect">Incorrect responses label (legend)</label>
               <input type="text" id="meta-incorrect" data-meta="incorrect" placeholder="e.g. Errors">
             </div>
             <div class="field-group">
               <label for="meta-neutral">Neutral label</label>
               <input type="text" id="meta-neutral" data-meta="neutral" placeholder="e.g. Prompted">
+            </div>
+            <div class="field-group">
+              <label for="meta-footer_correct">Correct label on chart (short)</label>
+              <input type="text" id="meta-footer_correct" data-meta="footer_correct" maxlength="16" placeholder="e.g. Correct">
+            </div>
+            <div class="field-group">
+              <label for="meta-footer_incorrect">Incorrect label on chart (short)</label>
+              <input type="text" id="meta-footer_incorrect" data-meta="footer_incorrect" maxlength="16" placeholder="e.g. Errors">
             </div>
             <div class="field-group">
               <label for="meta-acceltarget">Acceleration target (×/wk)</label>

@@ -1,7 +1,7 @@
 /**
  * exportReportModal.js — PDF Progress Report export
  * A standalone menu (opened from the Overview page) for generating a
- * printable multi-page PDF for one athlete: a cover page, a plain table of
+ * printable multi-page PDF for one participant: a cover page, a plain table of
  * contents (pinpoint + page number, nothing else), and one full detail page
  * per selected pinpoint with the chart, a Program Review box, and blank
  * space for handwritten comments.
@@ -26,7 +26,7 @@ class ExportReportModal {
       catch (err) { console.error('[ExportReportModal]', err); }
     }
     this._feedback('', false);
-    this._renderAthleteSelects();
+    this._renderParticipantSelects();
     this._renderPinpointChecks([]);
   }
 
@@ -51,8 +51,8 @@ class ExportReportModal {
         <div class="login-mode-label">Export Progress Report</div>
 
         <div class="overlay-primary-section">
-          <label class="manage-section-label">Athlete</label>
-          <div class="report-athlete-selects">
+          <label class="manage-section-label">Participant</label>
+          <div class="report-participant-selects">
             <select class="invite-select" id="report-team"></select>
             <select class="invite-select" id="report-participant"></select>
           </div>
@@ -60,7 +60,7 @@ class ExportReportModal {
 
         <label class="manage-section-label" style="margin-top:14px">Pinpoints to include</label>
         <div class="report-skill-checks" id="report-skill-checks">
-          <p class="hv-notify-empty">Choose an athlete first.</p>
+          <p class="hv-notify-empty">Choose a participant first.</p>
         </div>
 
         <div class="overlay-modal-actions">
@@ -91,14 +91,14 @@ class ExportReportModal {
   }
 
   _participantOptionsHTML(teamId, selectedId) {
-    const opts = ['<option value="">Athlete…</option>'];
+    const opts = ['<option value="">Participant…</option>'];
     this._participants
       .filter(p => !teamId || String(p.team_id) === String(teamId))
       .forEach(p => opts.push(`<option value="${p.id}"${String(p.id) === String(selectedId) ? ' selected' : ''}>${_esc(p.name)}</option>`));
     return opts.join('');
   }
 
-  _renderAthleteSelects() {
+  _renderParticipantSelects() {
     const teamSel = document.getElementById('report-team');
     const partSel = document.getElementById('report-participant');
     teamSel.innerHTML = this._teamOptionsHTML('');
@@ -108,7 +108,7 @@ class ExportReportModal {
   _renderPinpointChecks(instances) {
     const box = document.getElementById('report-skill-checks');
     if (!instances.length) {
-      box.innerHTML = '<p class="hv-notify-empty">Choose an athlete first.</p>';
+      box.innerHTML = '<p class="hv-notify-empty">Choose a participant first.</p>';
       return;
     }
     box.innerHTML = instances.map(i => `
@@ -143,7 +143,7 @@ class ExportReportModal {
     if (this._generating) return;
 
     const pid = document.getElementById('report-participant').value;
-    if (!pid) { this._feedback('Choose an athlete first.', true); return; }
+    if (!pid) { this._feedback('Choose a participant first.', true); return; }
 
     const participant = this._participants.find(p => String(p.id) === String(pid));
     const team = this._teams.find(t => String(t.id) === String(participant?.team_id));
@@ -176,7 +176,7 @@ class ExportReportModal {
 
       this._feedback('Building PDF…', false);
       await this._buildPdf({
-        athleteName: participant?.name || 'Athlete',
+        participantName: participant?.name || 'Participant',
         teamName: team?.name || '',
         sections,
       });
@@ -226,7 +226,7 @@ class ExportReportModal {
     const imgData = canvas.toDataURL('image/png');
     const stats = c.getStats();
 
-    return { name: instance.name, imgData, stats, meta: c.meta, goals: goals || [] };
+    return { name: instance.name, measurementType: instance.measurement_type, imgData, stats, meta: c.meta, goals: goals || [] };
   }
 
   // ── PDF assembly ────────────────────────────────────────────────────────
@@ -398,8 +398,12 @@ class ExportReportModal {
     kv('Bounce Method', 'Max Residual');
     kv('Level Method', 'Geometric Mean');
     ty += 3;
-    markerRow(dotShape, dotColor, meta.correct   || 'correct responses');
-    markerRow(xShape,   xColor,   meta.incorrect || 'incorrect responses');
+    markerRow(dotShape, dotColor, meta.correct || 'correct responses');
+    // Only duration/latency have no error series — count-per-day has one,
+    // same as frequency, just without rate normalization.
+    if (section.measurementType !== 'duration' && section.measurementType !== 'latency') {
+      markerRow(xShape, xColor, meta.incorrect || 'incorrect responses');
+    }
     ty += 3;
 
     sectionHeader('Current Condition');
@@ -407,7 +411,13 @@ class ExportReportModal {
     doc.text(stats.condition || 'N/A', x + pad, ty);
     ty += 15;
 
-    statRow('LEVEL', stats.level != null ? this._fmt(stats.level) : '—', dotShape, dotColor);
+    // Level is a raw plotted value — for duration/latency that's a
+    // 60/seconds rate, meaningless on its own — convert back to a time.
+    const isSingleSeries = section.measurementType === 'duration' || section.measurementType === 'latency';
+    const levelDisplay = stats.level == null ? '—'
+      : isSingleSeries ? this._formatGoalTime(60 / stats.level)
+      : this._fmt(stats.level);
+    statRow('LEVEL', levelDisplay, dotShape, dotColor);
     statRow('CELERATION', this._fmtCel(stats.dotCeleration), dotShape, dotColor);
     statRow('BOUNCE', stats.dotBounce != null ? '×' + this._fmt(stats.dotBounce) : '—', dotShape, dotColor);
     statRow('IMP. INDEX', this._fmtCel(stats.impIndex), null, null);
@@ -437,7 +447,7 @@ class ExportReportModal {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(0, 153, 204);
     doc.text('TEAM ABA', PW / 2, y, { align: 'center' }); y += 40;
     doc.setFontSize(28); doc.setTextColor(0, 51, 68);
-    doc.text(report.athleteName, PW / 2, y, { align: 'center' }); y += 26;
+    doc.text(report.participantName, PW / 2, y, { align: 'center' }); y += 26;
     if (report.teamName) {
       doc.setFont('helvetica', 'normal'); doc.setFontSize(14); doc.setTextColor(90, 138, 154);
       doc.text(report.teamName, PW / 2, y, { align: 'center' }); y += 40;
@@ -503,6 +513,6 @@ class ExportReportModal {
       this._drawReviewBox(doc, MARGIN + commentsW + gap, dy, reviewW, bottomH, section);
     });
 
-    doc.save(`${report.athleteName} Progress Report.pdf`);
+    doc.save(`${report.participantName} Progress Report.pdf`);
   }
 }

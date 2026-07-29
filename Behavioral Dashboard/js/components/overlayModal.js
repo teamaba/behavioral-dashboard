@@ -260,6 +260,7 @@ class OverlayModal {
         overlays[s.i] = {
           instanceId: s.sel.instanceId,
           label: s.info.label,
+          measurementType: s.info.instance.measurement_type,
           rawPoints: (overlayPointsList[idx] || []).map(p => ({
             type: p.type, day: p.day, val: p.val, note: p.note, floor: p.floor || null,
           })),
@@ -278,6 +279,7 @@ class OverlayModal {
 
       const primary = {
         label: primaryInfo.label,
+        measurementType: primaryInfo.instance.measurement_type,
         points: (primaryPoints || []).map(p => ({
           id: p.id, type: p.type, day: p.day, val: p.val, note: p.note, floor: p.floor || null,
         })),
@@ -312,6 +314,7 @@ class OverlayModal {
     ];
     const primary = {
       label: 'Demo — Jordan P. › Sight Word Fluency',
+      measurementType: 'frequency',
       points: [
         ...primaryDots.map(([day, val], idx) => mk('dot', day, val, idx === 0 ? 'Baseline session' : '')),
         ...primaryErrs.map(([day, val]) => mk('x', day, val)),
@@ -342,6 +345,7 @@ class OverlayModal {
     const overlay = {
       instanceId: 'demo-2',
       label: 'Demo — Casey M. › Sight Word Fluency',
+      measurementType: 'frequency',
       rawPoints: [
         ...overlayDots.map(([day, val]) => mk('dot', day, val)),
         ...overlayErrs.map(([day, val]) => mk('x', day, val)),

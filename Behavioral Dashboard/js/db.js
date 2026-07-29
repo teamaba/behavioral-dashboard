@@ -341,7 +341,7 @@ const DB = (() => {
     return restRequest(`/pinpoints?id=eq.${id}`, { method: 'DELETE' });
   }
 
-  // ── Participant Pinpoints (per-athlete chart instance) ───────────────────
+  // ── Participant Pinpoints (per-participant chart instance) ───────────────────
   // Copied from a library Pinpoint at creation time — editing the library
   // template afterward never touches existing instances.
 
@@ -349,8 +349,25 @@ const DB = (() => {
     return restRequest(`/participant_pinpoints?participant_id=eq.${participantId}&order=created_at.asc`);
   }
 
+  // Which participants currently have a chart assigned from this library pinpoint —
+  // used by the Pinpoint Library's "clients using this pinpoint" list.
+  // participants(name) is a PostgREST embed via participant_pinpoints.participant_id's FK.
+  async function getParticipantPinpointsByPinpoint(pinpointId) {
+    return restRequest(
+      `/participant_pinpoints?pinpoint_id=eq.${pinpointId}&select=id,name,participant_id,created_at,participants(name)&order=created_at.asc`
+    );
+  }
+
   async function getAllParticipantPinpoints() {
     return restRequest('/participant_pinpoints?order=participant_id.asc,created_at.asc');
+  }
+
+  // Bulk version of getParticipantPinpointsByPinpoint — every instance across
+  // every pinpoint, with the participant's name embedded, so the Pinpoints
+  // Library can show "clients using this pinpoint" on every row from one
+  // request instead of one request per pinpoint.
+  async function getAllParticipantPinpointsForLibrary() {
+    return restRequest('/participant_pinpoints?select=id,pinpoint_id,participant_id,participants(name)');
   }
 
   async function getOneParticipantPinpoint(id) {
@@ -397,6 +414,32 @@ const DB = (() => {
     return restRequest(
       `/data_points?instance_id=eq.${instanceId}&order=day.asc,created_at.asc`
     );
+  }
+
+  // Used by the hierarchy home page to mark which pinpoint charts have any
+  // logged data at all — only pulls the FK column, not full point rows.
+  async function getNonEmptyInstanceIds() {
+    const rows = await restRequest('/data_points?select=instance_id');
+    return [...new Set((rows || []).map(r => r.instance_id))];
+  }
+
+  // Most recent logged-data timestamp across a set of instances — used by
+  // the Pinpoint Library's "last used" display.
+  async function getLastPointDate(instanceIds) {
+    if (!instanceIds || !instanceIds.length) return null;
+    const idList = instanceIds.map(id => `"${id}"`).join(',');
+    const rows = await restRequest(`/data_points?instance_id=in.(${idList})&select=created_at&order=created_at.desc&limit=1`);
+    return rows && rows.length ? rows[0].created_at : null;
+  }
+
+  // Bulk version — most recent created_at PER instance, for every instance
+  // that has any data. Only pulls 2 columns; rows are already newest-first,
+  // so the first time an instance_id is seen is its most recent point.
+  async function getLastDatesByInstance() {
+    const rows = await restRequest('/data_points?select=instance_id,created_at&order=created_at.desc');
+    const map = {};
+    (rows || []).forEach(r => { if (!(r.instance_id in map)) map[r.instance_id] = r.created_at; });
+    return map;
   }
 
   async function addPoint({ instance_id, type, day, val, note, floor }) {
@@ -524,6 +567,15 @@ const DB = (() => {
     return restRequest('/profiles?order=email.asc');
   }
 
+  // Only resolves if the caller is a supervisor or the profile's own owner —
+  // plain staff reading another staffer's pinpoint will get null back (RLS
+  // only grants "read own profile" plus a supervisor-wide read policy).
+  async function getProfileById(id) {
+    if (!id) return null;
+    const rows = await restRequest(`/profiles?id=eq.${id}&select=email&limit=1`);
+    return rows && rows.length ? rows[0] : null;
+  }
+
   async function updateUserProfile(id, fields) {
     return restRequest(`/profiles?id=eq.${id}`, {
       method: 'PATCH',
@@ -554,13 +606,14 @@ const DB = (() => {
     pinpoints:          { getAll: getPinpoints, getByCategory: getPinpointsByCategory, get: getPinpoint, add: addPinpoint, update: updatePinpoint, delete: deletePinpoint },
     participantPinpoints: {
       getAll: getAllParticipantPinpoints, get: getParticipantPinpoints, getOne: getOneParticipantPinpoint,
+      getByPinpoint: getParticipantPinpointsByPinpoint, getAllForLibrary: getAllParticipantPinpointsForLibrary,
       add: addParticipantPinpoint, update: updateParticipantPinpoint, delete: deleteParticipantPinpoint
     },
-    points:             { get: getPoints, add: addPoint, delete: deletePoint, clear: clearPoints },
+    points:             { get: getPoints, add: addPoint, delete: deletePoint, clear: clearPoints, getNonEmptyInstanceIds, getLastDate: getLastPointDate, getLastDatesByInstance },
     meta:               { get: getMeta, upsert: upsertMeta },
     goals:              { get: getGoals, add: addGoal, delete: deleteGoal, markAchieved: markGoalAchieved },
     functions:          { invoke: invokeFunction },
     invites:            { add: addAllowed },
-    users:              { getAll: getAllProfiles, update: updateUserProfile, remove: removeUser }
+    users:              { getAll: getAllProfiles, getOne: getProfileById, update: updateUserProfile, remove: removeUser }
   };
 })();

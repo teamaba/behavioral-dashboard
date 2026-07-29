@@ -46,6 +46,7 @@ class SCCChart {
       organization: '', supervisor: '', counter: '',
       charter: '', environment: '', timer: '',
       correct: '', incorrect: '', neutral: '',
+      footer_correct: '', footer_incorrect: '',
       acceltarget: '', deceltarget: '',
       startDate: '', goal: '',
       dotColor: '#009933', dotShape: 'circle',
@@ -96,8 +97,11 @@ class SCCChart {
 
   // duration/latency/count_per_day only ever have one data series (there's
   // no separate "error" stream), so their slope box / stat displays show a
-  // single figure instead of frequency's Successes+Errors pair.
-  _isSingleSeries() { return this.measurementType !== 'frequency'; }
+  // single figure instead of Successes+Errors. Count-per-day is NOT single-
+  // series — it fully supports separate success/error entries (see
+  // dashboard.js's _readLogForm count_per_day branch), just without a
+  // rate/floor normalization, so it's grouped with frequency here.
+  _isSingleSeries() { return this.measurementType === 'duration' || this.measurementType === 'latency'; }
 
   _cfg() { return this._TYPE_CONFIG[this.chartType] || this._TYPE_CONFIG['daily']; }
 
@@ -220,7 +224,8 @@ class SCCChart {
   // 8 point-display modes. 'stacked' isn't handled here — it's a structural
   // fork in _bucketAndAggregate (it doesn't collapse to a single point).
 
-  _aggregate(values) {
+  // higherIsBetter drives best/worst only — every other mode is direction-agnostic.
+  _aggregate(values, higherIsBetter = true) {
     const vals = values.filter(v => typeof v === 'number' && v > 0);
     if (!vals.length) return null;
     switch (this.aggregation) {
@@ -238,10 +243,22 @@ class SCCChart {
       case 'first':      return vals[0];
       case 'last':        return vals[vals.length - 1];
       case 'summative':  return vals.reduce((s, v) => s + v, 0);
-      case 'best':        return Math.max(...vals);
-      case 'worst':        return Math.min(...vals);
+      case 'best':        return higherIsBetter ? Math.max(...vals) : Math.min(...vals);
+      case 'worst':        return higherIsBetter ? Math.min(...vals) : Math.max(...vals);
       default: return null;
     }
+  }
+
+  // Frequency has two series with fixed, opposite conventional directions
+  // (dot=corrects=accelerate=higher-is-better, x=errors=decelerate=lower-is-
+  // better) regardless of the Goal field — count-per-day has the same two
+  // series/convention, just without rate normalization. Single-series types
+  // (duration/latency) only ever populate 'dot', and their direction comes
+  // from the pinpoint's own Goal setting instead — same field
+  // _updateSlopeBox already uses to pick accel vs decel target.
+  _higherIsBetter(seriesType) {
+    if (!this._isSingleSeries()) return seriesType === 'dot';
+    return this.meta.goal !== 'Deceleration';
   }
 
   // ── Plottable points ──────────────────────────────────────────────────────
@@ -277,6 +294,7 @@ class SCCChart {
     });
 
     const pushBucket = (buckets, type) => {
+      const higherIsBetter = this._higherIsBetter(type);
       Object.entries(buckets).forEach(([unitStr, pts]) => {
         const unit = Number(unitStr);
         const col  = colOf(unit);
@@ -288,7 +306,7 @@ class SCCChart {
           });
           return;
         }
-        const v = this._aggregate(pts.map(p => p.val));
+        const v = this._aggregate(pts.map(p => p.val), higherIsBetter);
         if (v == null) return;
         result.push({ type, col, day: unit, val: v,
           note: pts.length > 1 ? `(${pts.length})` : '',
@@ -679,6 +697,7 @@ class SCCChart {
 
     const snapshot = {
       points: this.points,
+      measurementType: this.measurementType,
       dotColor: this.meta.dotColor, dotShape: this.meta.dotShape,
       xColor: this.meta.xColor,     xShape: this.meta.xShape,
       aimLow: this.aimLow, aimHigh: this.aimHigh,
@@ -701,6 +720,7 @@ class SCCChart {
       }
 
       this.points = pts;
+      this.measurementType = ov.measurementType || 'frequency';
       this._plottableCache = null;
       this.meta.dotColor = ov.style.dotColor;
       this.meta.dotShape = ov.style.dotShape;
@@ -727,6 +747,7 @@ class SCCChart {
     });
 
     this.points = snapshot.points;
+    this.measurementType = snapshot.measurementType;
     this.meta.dotColor = snapshot.dotColor;
     this.meta.dotShape = snapshot.dotShape;
     this.meta.xColor   = snapshot.xColor;
@@ -1155,10 +1176,32 @@ class SCCChart {
 
   // ── Footer ────────────────────────────────────────────────────────────────
 
+  // Shortens text with an ellipsis if it wouldn't fit maxWidth at the ctx's
+  // current font — a hard guarantee against footer-box overflow, on top of
+  // the maxlength already enforced on the footer_correct/footer_incorrect
+  // inputs (belt-and-suspenders: maxlength keeps entry short, this keeps
+  // rendering safe regardless of character width or old/unedited data).
+  _truncateForWidth(ctx, text, maxWidth) {
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    let lo = 0, hi = text.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (ctx.measureText(text.slice(0, mid) + '…').width <= maxWidth) lo = mid; else hi = mid - 1;
+    }
+    return lo > 0 ? text.slice(0, lo) + '…' : '';
+  }
+
   _drawFooterOnCanvas() {
     const { ctx } = this;
     const fields = ['organization','supervisor','counter','charter','environment','timer','correct','incorrect','neutral'];
     const labels = ['ORGANIZATION','SUPERVISOR','COUNTER','CHARTER','ENVIRONMENT','TIMER','CORRECT','INCORRECT','NEUTRAL'];
+    // The chart footer is a narrow fixed-width column — too tight for the
+    // fuller Correct/Incorrect responses labels (used by the Legend and
+    // Program Review, sourced from the pinpoint). footer_correct/
+    // footer_incorrect are separate, short-only fields set directly on the
+    // chart, independent of the pinpoint. Falls back to the long label for
+    // charts created before this field existed.
+    const footerKey = { correct: 'footer_correct', incorrect: 'footer_incorrect' };
     const fw         = this.cW / fields.length;
     const yLabel     = this.PT + this.cH + 40;
     const yValue     = this.PT + this.cH + 52;
@@ -1167,9 +1210,10 @@ class SCCChart {
       const x = this.PL + i * fw;
       ctx.fillStyle = this.C_TEXT; ctx.font = '7px Arial,sans-serif'; ctx.textAlign = 'left';
       ctx.fillText(labels[i], x + 2, yLabel);
-      if (this.meta[key]) {
+      const raw = (footerKey[key] && this.meta[footerKey[key]]) || this.meta[key];
+      if (raw) {
         ctx.fillStyle = '#003344'; ctx.font = '9px Arial,sans-serif';
-        ctx.fillText(this.meta[key], x + 2, yValue);
+        ctx.fillText(this._truncateForWidth(ctx, raw, fw - 6), x + 2, yValue);
       }
       ctx.strokeStyle = this.C_TEXT; ctx.lineWidth = 0.5;
       ctx.beginPath(); ctx.moveTo(x + 2, yUnderline); ctx.lineTo(x + fw - 4, yUnderline); ctx.stroke();
@@ -1180,15 +1224,19 @@ class SCCChart {
     const box = document.getElementById('legend-box');
     if (!box) return;
     const correct   = this.meta.correct   || 'Correct';
-    const incorrect = this.meta.incorrect || 'Error';
     const dotSym = { circle: '●', square: '■', triangle: '▲', diamond: '◆', slash: '/', backslash: '\\' }[this.meta.dotShape || 'circle'] || '●';
-    const xSym   = { x: '×', plus: '+', dash: '—', opencircle: '○' }[this.meta.xShape || 'x'] || '×';
     const dotColor = this.meta.dotColor || '#009933';
-    const xColor   = this.meta.xColor   || '#cc0000';
     const rows = [
       { type: 'dot', symbol: dotSym, color: dotColor, label: correct },
-      { type: 'x',   symbol: xSym,   color: xColor,   label: incorrect },
     ];
+    // Duration/latency/count-per-day only ever have one data series — no
+    // error/x series to show a marker for.
+    if (!this._isSingleSeries()) {
+      const incorrect = this.meta.incorrect || 'Error';
+      const xSym     = { x: '×', plus: '+', dash: '—', opencircle: '○' }[this.meta.xShape || 'x'] || '×';
+      const xColor   = this.meta.xColor   || '#cc0000';
+      rows.push({ type: 'x', symbol: xSym, color: xColor, label: incorrect });
+    }
     if (this.meta.neutral) rows.push({ type: null, symbol: '—', color: '#666', label: this.meta.neutral });
     box.innerHTML = rows.map(r =>
       `<span class="legend-item${r.type ? ' legend-item--editable' : ''}" ${r.type ? `data-type="${r.type}"` : ''}><span class="legend-sym" style="color:${r.color}">${r.symbol}</span>${r.label}</span>`
@@ -1289,10 +1337,22 @@ class SCCChart {
   _isLineType(type) { return type === 'phase' || type === 'intervention'; }
 
   // Duration/latency points read better as the time they represent than as a
-  // count/min rate. measurementType is a real stored field now, so this is a
-  // simple chart-level check rather than inferring it per-point from val/floor.
-  _isTimingPoint(p) {
-    return (this.measurementType === 'duration' || this.measurementType === 'latency') && p.floor > 0;
+  // count/min rate. Purely a chart-level check now (measurementType is a
+  // real stored field) — NOT gated on p.floor, because aggregated points
+  // (weekly/monthly/yearly/count_per_day in any non-stacked mode) never
+  // carry a floor at all: _bucketAndAggregate only extracts .val before
+  // aggregating, so a floor-gated check silently went false for every one
+  // of those and fell back to showing a meaningless rate.
+  _isTimingPoint() {
+    return this.measurementType === 'duration' || this.measurementType === 'latency';
+  }
+
+  // Seconds to display for a timing point. Raw/stacked points carry their
+  // own floor directly; aggregated points don't, so derive from the plotted
+  // rate instead (val = 60/seconds, same relationship, just inverted).
+  _timingSeconds(p) {
+    if (p.floor > 0) return p.floor;
+    return p.val > 0 ? 60 / p.val : null;
   }
 
   // Mirrors GoalsManager._formatTime/_formatSecPart — m:ss, with a trimmed
@@ -1401,7 +1461,7 @@ class SCCChart {
     const dateStr = this._colToDateLabel(col);
     const nearbyValLabel = nearby
       ? (this.chartType === 'count_per_day' ? Math.round(nearby.val)
-         : this._isTimingPoint(nearby) ? this._formatTimingValue(nearby.floor)
+         : this._isTimingPoint() ? this._formatTimingValue(this._timingSeconds(nearby))
          : `${fmt(nearby.val)}/min`) +
         (nearby.note ? ' — ' + nearby.note : '')
       : null;
@@ -1424,7 +1484,7 @@ class SCCChart {
     if (this.chartType === 'daily' || this.chartType === 'timings') {
       return this._getPlottablePoints()
         .filter(p => !this._isLineType(p.type) && hasNote(p.note))
-        .map(p => ({ px: p.px, note: p.note, type: p.type, day: p.day, val: p.val }));
+        .map(p => ({ px: p.px, note: p.note, type: p.type, day: p.day, val: p.val, floor: p.floor }));
     }
 
     // weekly/monthly/yearly/count_per_day: notes may be stripped by aggregation — use raw points
@@ -1441,7 +1501,7 @@ class SCCChart {
         } else {
           px = this.colC(this.monthToCol(this._monthOffsetOf(p.day)));
         }
-        return { px, note: p.note, type: p.type, day: p.day, val: p.val };
+        return { px, note: p.note, type: p.type, day: p.day, val: p.val, floor: p.floor };
       });
   }
 
@@ -1576,7 +1636,7 @@ class SCCChart {
           <span class="note-popup-icon note-popup-icon--${p.type}">${p.type === 'dot' ? '●' : '×'}</span>
           <span>${p.type === 'dot' ? 'Correct' : 'Error'} &middot; ${dayLabel(p)} &middot; ${
             this.chartType === 'count_per_day' ? Math.round(p.val)
-            : this._isTimingPoint(p) ? this._formatTimingValue(p.floor)
+            : this._isTimingPoint() ? this._formatTimingValue(this._timingSeconds(p))
             : `${fmt(p.val)}/min`
           }</span>
         </div>

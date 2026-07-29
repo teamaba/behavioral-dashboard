@@ -57,9 +57,11 @@ class HierarchyView {
   async _renderStaff() {
     const canEdit  = DB.auth.isStaff();      // false for Guides — read-only viewers of their assigned participants
     const isSuper  = DB.auth.isSupervisor(); // guide assignment is supervisor-only
-    const [teams, participants, instances] = await Promise.all([
-      DB.teams.getAll(), DB.participants.getAll(), DB.participantPinpoints.getAll()
+    const [teams, participants, instances, nonEmptyIds] = await Promise.all([
+      DB.teams.getAll(), DB.participants.getAll(), DB.participantPinpoints.getAll(),
+      DB.points.getNonEmptyInstanceIds()
     ]);
+    this._nonEmptyIds = new Set(nonEmptyIds);
     let allNotifEmails = [];
     let allGuides = [], allGuideAssignments = [];
     if (canEdit) {
@@ -94,6 +96,7 @@ class HierarchyView {
     if (!teams.length) {
       this._content.innerHTML = `
         <div class="hv-empty">
+          ${canEdit ? this._pinpointsBannerHTML() : ''}
           <p class="hv-empty-msg">${canEdit ? 'No teams yet.' : 'No clients assigned yet — contact your supervisor.'}</p>
           ${isSuper ? this._addTeamHTML() : ''}
         </div>`;
@@ -106,6 +109,7 @@ class HierarchyView {
     this._isSuper      = isSuper;
     this._allGuides    = allGuides;
     this._content.innerHTML =
+      (canEdit ? this._pinpointsBannerHTML() : '') +
       teams.map(team => this._teamHTML(team, byTeam[team.id] || [], byPart, notifByPart, guidesByPart)).join('') +
       this._supervisorPanelHTML();
 
@@ -130,7 +134,7 @@ class HierarchyView {
         let cardMatches = !q || teamMatches;
         if (!cardMatches) {
           const pname = (cardEl.querySelector('.hv-card-name')?.textContent || '').toLowerCase();
-          const instanceNames = [...cardEl.querySelectorAll('.hv-domain-btn')].map(el => el.textContent.toLowerCase());
+          const instanceNames = [...cardEl.querySelectorAll('.pl-pinpoint-name')].map(el => el.textContent.toLowerCase());
           cardMatches = pname.includes(q) || instanceNames.some(n => n.includes(q));
         }
         cardEl.style.display = cardMatches ? '' : 'none';
@@ -172,6 +176,14 @@ class HierarchyView {
 
   // ── HTML builders ────────────────────────────────────────────────────────
 
+  _pinpointsBannerHTML() {
+    return `
+      <button class="hv-pinpoints-banner" id="hv-pinpoints-banner-btn">
+        <span class="hv-pinpoints-banner-title">Pinpoints Library</span>
+        <span class="hv-pinpoints-banner-sub">Manage reusable pinpoint templates and folders</span>
+      </button>`;
+  }
+
   _teamHTML(team, participants, byPart, notifByPart = {}, guidesByPart = {}) {
     const cards = participants.map(p =>
       this._participantCard(p, byPart[p.id] || [], team.name, notifByPart[p.id] || [], guidesByPart[p.id] || [])
@@ -202,7 +214,7 @@ class HierarchyView {
     const canEdit = DB.auth.isStaff();
     const isSuper = DB.auth.isSupervisor();
     const sorted  = this._sortedInstances(instances);
-    const instanceRows = sorted.map(inst => this._instanceRow(inst, p, teamName)).join('');
+    const instanceTable = sorted.length ? this._instanceTableHTML(sorted, p, teamName) : '';
     const notifRows = notifEmails.map(n => `
       <div class="hv-pnotif-row" data-nid="${n.id}">
         <span class="hv-pnotif-email">${_hvEsc(n.email)}</span>
@@ -268,8 +280,7 @@ class HierarchyView {
         ${settingsPopover}
         <div class="hv-body hidden" id="${bodyId}">
           <div class="hv-behaviors" id="hv-insts-${p.id}">
-            ${instanceRows}
-            ${!instances.length ? '<p class="hv-no-behaviors">No pinpoints yet.</p>' : ''}
+            ${instanceTable || '<p class="hv-no-behaviors">No pinpoints yet.</p>'}
           </div>
           ${addChartRow}
         </div>
@@ -300,20 +311,29 @@ class HierarchyView {
         </div>`;
   }
 
+  _instanceTableHTML(instances, p, teamName) {
+    return `
+      <table class="pl-pinpoint-table">
+        <thead><tr><th>Pinpoint</th><th>Type</th><th></th></tr></thead>
+        <tbody>
+          ${instances.map(inst => this._instanceRow(inst, p, teamName)).join('')}
+        </tbody>
+      </table>`;
+  }
+
   _instanceRow(inst, p, teamName) {
-    const isRecent = this._getAccess(inst.id) > 0 && inst.id === this._sortedInstances([inst])[0]?.id
-      ? true : false;
+    const hasData = this._nonEmptyIds?.has(inst.id) ?? false;
     const delBtn = DB.auth.isStaff()
       ? `<button class="hv-del-beh" data-iid="${inst.id}" data-iname="${_hvEsc(inst.name)}" title="Remove pinpoint">&#10005;</button>`
       : '';
     return `
-      <div class="hv-behavior-row" id="hv-inst-${inst.id}">
-        <button class="hv-domain-btn${this._getAccess(inst.id) > 0 ? ' hv-domain-btn--recent' : ''}"
-                data-iid="${inst.id}" data-partid="${_hvEsc(p.id)}"
-                data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}"
-                data-iname="${_hvEsc(inst.name)}">${_hvEsc(inst.name)}</button>
-        ${delBtn}
-      </div>`;
+      <tr class="hv-pinpoint-row${hasData ? ' hv-pinpoint-row--has-data' : ''}" id="hv-inst-${inst.id}"
+          data-iid="${inst.id}" data-partid="${_hvEsc(p.id)}"
+          data-tname="${_hvEsc(teamName)}" data-pname="${_hvEsc(p.name)}" data-iname="${_hvEsc(inst.name)}">
+        <td class="pl-pinpoint-name">${_hvEsc(inst.name)}</td>
+        <td><span class="pl-pinpoint-type-tag">${_hvEsc(_hvTypeLabelShort(inst.measurement_type))}</span></td>
+        <td class="hv-pinpoint-actions">${delBtn}</td>
+      </tr>`;
   }
 
   _addTeamHTML() {
@@ -359,16 +379,21 @@ class HierarchyView {
         '<p class="hv-empty-msg">No pinpoints found. Contact your coach or supervisor.</p>';
       return;
     }
-    const instances = await DB.participantPinpoints.get(self.id);
+    const [instances, nonEmptyIds] = await Promise.all([
+      DB.participantPinpoints.get(self.id),
+      DB.points.getNonEmptyInstanceIds()
+    ]);
+    this._nonEmptyIds = new Set(nonEmptyIds);
     const teamName  = (self.teams && self.teams.name) || '';
-    const rows = this._sortedInstances(instances).map(inst => this._instanceRow(inst, self, teamName)).join('');
+    const sorted = this._sortedInstances(instances);
+    const table = sorted.length ? this._instanceTableHTML(sorted, self, teamName) : '';
     this._content.innerHTML = `
       <section class="hv-team">
         <div class="hv-cards">
           <div class="hv-card">
             <div class="hv-card-name">${_hvEsc(self.name)}</div>
             <div class="hv-behaviors">
-              ${rows || '<p class="hv-no-behaviors">No pinpoints yet.</p>'}
+              ${table || '<p class="hv-no-behaviors">No pinpoints yet.</p>'}
             </div>
           </div>
         </div>
@@ -382,14 +407,23 @@ class HierarchyView {
     if (this._eventsBound) return;
     this._eventsBound = true;
     this._content.addEventListener('click', e => {
-      const instBtn = e.target.closest('.hv-domain-btn');
-      if (instBtn) { this._selectInstance(instBtn); return; }
+      const pinpointsBanner = e.target.closest('#hv-pinpoints-banner-btn');
+      if (pinpointsBanner) { window.pinpointsLibrary?.show(); return; }
+
+      // Delete button must be checked before the row-select below, since
+      // it's nested inside the same clickable .hv-pinpoint-row now.
+      const delInst = e.target.closest('.hv-del-beh');
+      if (delInst) {
+        e.stopPropagation();
+        this._confirmDeleteInstance(delInst.dataset.iid, delInst.dataset.iname);
+        return;
+      }
+
+      const instRow = e.target.closest('.hv-pinpoint-row');
+      if (instRow) { this._selectInstance(instRow); return; }
 
       const toggle = e.target.closest('.js-toggle');
       if (toggle) { this._toggle(toggle); return; }
-
-      const delInst = e.target.closest('.hv-del-beh');
-      if (delInst) { this._confirmDeleteInstance(delInst.dataset.iid, delInst.dataset.iname); return; }
 
       const guideAddBtn = e.target.closest('.hv-guide-add-btn');
       if (guideAddBtn) { this._addGuideToParticipant(guideAddBtn.dataset.pid); return; }
@@ -685,4 +719,8 @@ function _hvEsc(str) {
   return (str || '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
   );
+}
+
+function _hvTypeLabelShort(mt) {
+  return { frequency: 'Frequency', duration: 'Duration', latency: 'Latency', count_per_day: 'Count/Day' }[mt] || mt;
 }

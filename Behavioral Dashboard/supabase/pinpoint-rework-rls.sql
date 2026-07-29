@@ -9,16 +9,23 @@ ALTER TABLE categories            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pinpoints             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE participant_pinpoints ENABLE ROW LEVEL SECURITY;
 
--- ── Categories: staff/supervisor full CRUD; any authenticated user reads ────
+-- goals was created back in hierarchy-migration.sql with policies but never
+-- actually had RLS switched on for it (the Supabase security advisor flags
+-- this as "table publicly accessible") — fixed here since this file already
+-- redefines goals' policies below.
+ALTER TABLE goals ENABLE ROW LEVEL SECURITY;
+
+-- ── Categories: staff/supervisor only — same as pinpoints, the library is an
+-- internal tool. No client/guide code path reads categories in this app
+-- (unlike the old domains table, which clients needed for their own chart
+-- tree) — the old "any authenticated user reads" policy was carried over
+-- from that pattern without being needed anymore, so it's dropped here.
+DROP POLICY IF EXISTS "categories_read" ON categories;
 DROP POLICY IF EXISTS "staff_categories_all" ON categories;
 CREATE POLICY "staff_categories_all" ON categories
   FOR ALL USING (
     EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('staff','supervisor'))
   );
-
-DROP POLICY IF EXISTS "categories_read" ON categories;
-CREATE POLICY "categories_read" ON categories
-  FOR SELECT USING (auth.uid() IS NOT NULL);
 
 -- ── Pinpoints: staff/supervisor only — the library is an internal tool ─────
 DROP POLICY IF EXISTS "staff_pinpoints_all" ON pinpoints;

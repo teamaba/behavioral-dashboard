@@ -182,7 +182,7 @@ class Dashboard {
       this.chart.draw();
 
       // Restore meta fields
-      const metaFields = ['startDate','organization','supervisor','counter','charter','environment','timer','correct','incorrect','neutral','acceltarget','deceltarget','goal','dotColor','dotShape','xColor','xShape'];
+      const metaFields = ['startDate','organization','supervisor','counter','charter','environment','timer','correct','incorrect','neutral','footer_correct','footer_incorrect','acceltarget','deceltarget','goal','dotColor','dotShape','xColor','xShape'];
       metaFields.forEach(key => {
         const input = document.getElementById('meta-' + key.toLowerCase());
         if (input) {
@@ -277,6 +277,19 @@ class Dashboard {
     set('review-correct-label',   this.chart.meta.correct   || 'correct responses');
     set('review-incorrect-label', this.chart.meta.incorrect || 'incorrect responses');
 
+    // Duration/latency have no error/x series at all — hide that row.
+    // Counting-time floor ticks (scc.js's _drawFloorTicks) only ever draw
+    // when BOTH the measurement type isn't duration/latency AND the
+    // currently-selected view isn't Count Per Day — a frequency pinpoint
+    // being viewed in Count Per Day mode has no floor ticks either, so this
+    // mirrors that exact condition rather than measurement type alone.
+    el('review-x-marker-row')?.classList.toggle('hidden', this.chart._isSingleSeries());
+    el('review-floor-marker-row')?.classList.toggle('hidden',
+      this.chart._isSingleSeries() || this.chart.chartType === 'count_per_day');
+    // "Both" (directions) only means something when there are two series —
+    // duration/latency have one, so there's nothing for "Both" to apply to.
+    el('review-goal-both-option')?.toggleAttribute('hidden', this.chart._isSingleSeries());
+
     // Stat dot colors
     [1, 2, 3].forEach(i => {
       const d = el(`review-stat-dot-${i}`);
@@ -296,7 +309,15 @@ class Dashboard {
       return v > 1 ? `× ${fmt(v)}` : `÷ ${fmt(1 / v)}`;
     };
 
-    set('review-level',      stats.level      ? fmt(stats.level)             : '—');
+    // Celeration/Bounce/Imp.Index are unit-agnostic multiplicative factors
+    // ("×1.25/wk") so they're meaningful as-is regardless of measurement
+    // type. Level is a raw plotted value though — for duration/latency
+    // that's a 60/seconds rate, meaningless on its own — convert back to a
+    // time so it actually reflects what was entered on the chart.
+    const levelDisplay = stats.level == null ? '—'
+      : this.chart._isSingleSeries() ? this.chart._formatTimingValue(60 / stats.level)
+      : fmt(stats.level);
+    set('review-level',      levelDisplay);
     set('review-celeration', fmtCel(stats.dotCeleration));
     set('review-bounce',     stats.dotBounce  ? `× ${fmt(stats.dotBounce)}` : '—');
     set('review-imp-index',  fmtCel(stats.impIndex));

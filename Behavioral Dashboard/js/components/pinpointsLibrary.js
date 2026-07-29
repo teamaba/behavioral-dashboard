@@ -2,7 +2,7 @@
  * pinpointsLibrary.js — Full-screen Pinpoints Library
  * Categories (open-ended, nestable folders) containing reusable Pinpoint
  * templates. Staff manage categories/pinpoints here, independent of any
- * specific athlete; athletes get pinpoints attached via Add Chart.
+ * specific participant; participants get pinpoints attached via Add Chart.
  */
 
 class PinpointsLibrary {
@@ -31,9 +31,36 @@ class PinpointsLibrary {
 
   async _load() {
     try {
-      const [categories, pinpoints] = await Promise.all([DB.categories.getAll(), DB.pinpoints.getAll()]);
+      const [categories, pinpoints, allInstances, lastDates] = await Promise.all([
+        DB.categories.getAll(), DB.pinpoints.getAll(),
+        DB.participantPinpoints.getAllForLibrary(), DB.points.getLastDatesByInstance(),
+      ]);
       this._categories = categories || [];
       this._pinpoints   = pinpoints || [];
+
+      // Group assigned instances by the library pinpoint they came from, so
+      // each row can show its client list + last-used date without a
+      // separate request per pinpoint.
+      this._clientsByPinpoint = {};
+      (allInstances || []).forEach(inst => {
+        if (!inst.pinpoint_id) return;
+        (this._clientsByPinpoint[inst.pinpoint_id] ||= []).push(inst);
+      });
+      this._lastUsedByPinpoint = {};
+      Object.entries(this._clientsByPinpoint).forEach(([pinpointId, instances]) => {
+        const dates = instances.map(i => lastDates[i.id]).filter(Boolean).sort();
+        this._lastUsedByPinpoint[pinpointId] = dates.length ? dates[dates.length - 1] : null;
+      });
+
+      // Resolve creator emails in bulk. Staff (non-supervisor) only get
+      // their own profile back here per RLS — creators other than
+      // themselves will show as "Unknown", same as in View Pinpoint.
+      try {
+        const profiles = (await DB.users.getAll()) || [];
+        this._creatorEmailById = {};
+        profiles.forEach(pr => { this._creatorEmailById[pr.id] = pr.email; });
+      } catch (_) { this._creatorEmailById = {}; }
+
       this._render();
       this._bindEvents();
     } catch (err) {
@@ -45,7 +72,7 @@ class PinpointsLibrary {
   _render() {
     const topLevel = this._categories.filter(c => !c.parent_id).sort((a, b) => a.name.localeCompare(b.name));
     this._content.innerHTML =
-      (topLevel.length ? topLevel.map(c => this._categoryHTML(c, 0)).join('') : '<p class="hv-empty-msg">No categories yet.</p>') +
+      (topLevel.length ? topLevel.map(c => this._categoryHTML(c, 0)).join('') : '<p class="hv-empty-msg">No folders yet.</p>') +
       this._addCategoryRowHTML();
   }
 
@@ -55,47 +82,78 @@ class PinpointsLibrary {
     const bodyId = `pl-body-${cat.id}`;
     const chevId = `pl-chev-${cat.id}`;
     const isEmpty = !pinpoints.length && !children.length;
+    // The 4 seeded "Game Speed" folders are the only ones with a slug
+    // (DB.categories.add never sets one for user-created folders) — protected
+    // from deletion here in the UI, and at the DB level via a delete trigger.
+    const isProtected = !!cat.slug;
+    const delBtn = isProtected
+      ? `<button class="tree-del pl-del-cat" disabled title="Game Speed folders can't be deleted">&#10005;</button>`
+      : `<button class="tree-del pl-del-cat" data-cid="${cat.id}" data-cname="${_esc(cat.name)}" data-empty="${isEmpty}" title="Delete folder">&#10005;</button>`;
     return `
       <div class="tree-team pl-category" style="margin-left:${depth * 20}px">
         <div class="tree-hdr js-toggle" data-target="${bodyId}" data-chev="${chevId}">
           <span class="tree-chev" id="${chevId}">&#9654;</span>
-          <span class="tree-team-name">${_esc(cat.name)}</span>
-          <button class="tree-del pl-del-cat" data-cid="${cat.id}" data-cname="${_esc(cat.name)}" data-empty="${isEmpty}" title="Delete category">&#10005;</button>
+          <span class="pl-category-name">${_esc(cat.name)}</span>
+          ${delBtn}
         </div>
         <div class="tree-body hidden" id="${bodyId}">
-          ${pinpoints.map(p => this._pinpointRowHTML(p)).join('')}
+          ${pinpoints.length ? this._pinpointTableHTML(pinpoints) : ''}
           ${children.map(c => this._categoryHTML(c, depth + 1)).join('')}
           <div class="hv-add-row">
             <button class="hv-add-btn pl-add-pinpoint-btn" data-cid="${cat.id}">+ New Pinpoint</button>
           </div>
           <div class="hv-add-row">
-            <input class="hv-add-input pl-subcat-input" type="text" placeholder="New subcategory&#8230;" data-cid="${cat.id}">
+            <input class="hv-add-input pl-subcat-input" type="text" placeholder="New subfolder&#8230;" data-cid="${cat.id}">
             <button class="hv-add-btn pl-add-subcat-btn" data-cid="${cat.id}">+</button>
           </div>
         </div>
       </div>`;
   }
 
-  _pinpointRowHTML(p) {
+  _pinpointTableHTML(pinpoints) {
     return `
-      <div class="hv-behavior-row pl-pinpoint-row">
-        <button class="hv-domain-btn pl-pinpoint-btn" data-pid="${p.id}">${_esc(p.name)}</button>
-        <span class="pl-pinpoint-type-tag">${_esc(_plTypeLabelShort(p.measurement_type))}</span>
-      </div>`;
+      <table class="pl-pinpoint-table pl-pinpoint-table--wide">
+        <thead>
+          <tr><th>Pinpoint</th><th>Type</th><th>Created By</th><th>Created</th><th>Last Used</th><th>Clients</th></tr>
+        </thead>
+        <tbody>
+          ${pinpoints.map(p => this._pinpointRowHTML(p)).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  _plFmtDate(iso) {
+    return iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  }
+
+  _pinpointRowHTML(p) {
+    const clients     = this._clientsByPinpoint?.[p.id] || [];
+    const clientNames = clients.map(c => c.participants?.name).filter(Boolean);
+    const lastUsed     = this._lastUsedByPinpoint?.[p.id];
+    const creatorEmail = (p.created_by && this._creatorEmailById?.[p.created_by]) || 'Unknown';
+    return `
+      <tr class="pl-pinpoint-row" data-pid="${p.id}">
+        <td class="pl-pinpoint-name">${_esc(p.name)}</td>
+        <td><span class="pl-pinpoint-type-tag">${_esc(_plTypeLabelShort(p.measurement_type))}</span></td>
+        <td>${_esc(creatorEmail)}</td>
+        <td>${this._plFmtDate(p.created_at)}</td>
+        <td>${lastUsed ? this._plFmtDate(lastUsed) : 'Never'}</td>
+        <td title="${_esc(clientNames.join(', '))}">${clientNames.length}</td>
+      </tr>`;
   }
 
   _addCategoryRowHTML() {
     return `
       <div class="hv-add-row" style="margin-top:12px">
-        <input class="hv-add-input pl-cat-input" type="text" placeholder="New top-level category&#8230;">
-        <button class="hv-add-btn pl-add-cat-btn">+ Add Category</button>
+        <input class="hv-add-input pl-cat-input" type="text" placeholder="New folder&#8230;">
+        <button class="hv-add-btn pl-add-cat-btn">+ Add Folder</button>
       </div>`;
   }
 
   _applySearchFilter() {
     const q = (document.getElementById('pl-search')?.value || '').trim().toLowerCase();
     this._content.querySelectorAll('.pl-pinpoint-row').forEach(row => {
-      const name  = row.querySelector('.pl-pinpoint-btn')?.textContent.toLowerCase() || '';
+      const name  = row.querySelector('.pl-pinpoint-name')?.textContent.toLowerCase() || '';
       const match = !q || name.includes(q);
       row.style.display = match ? '' : 'none';
       if (match && q) {
@@ -115,11 +173,17 @@ class PinpointsLibrary {
     this._eventsBound = true;
 
     this._content.addEventListener('click', e => {
+      // Delete button must be checked before toggle since it's nested inside
+      // the .js-toggle header row — otherwise the toggle swallows the click.
+      const delCat = e.target.closest('.pl-del-cat');
+      if (delCat) {
+        e.stopPropagation();
+        this._deleteCategory(delCat.dataset.cid, delCat.dataset.cname, delCat.dataset.empty === 'true');
+        return;
+      }
+
       const toggle = e.target.closest('.js-toggle');
       if (toggle) { this._toggle(toggle); return; }
-
-      const delCat = e.target.closest('.pl-del-cat');
-      if (delCat) { this._deleteCategory(delCat.dataset.cid, delCat.dataset.cname, delCat.dataset.empty === 'true'); return; }
 
       const addPinpoint = e.target.closest('.pl-add-pinpoint-btn');
       if (addPinpoint) {
@@ -127,9 +191,9 @@ class PinpointsLibrary {
         return;
       }
 
-      const pinpointBtn = e.target.closest('.pl-pinpoint-btn');
-      if (pinpointBtn) {
-        window.pinpointFormModal.show(pinpointBtn.dataset.pid, null, () => this._load());
+      const pinpointRow = e.target.closest('.pl-pinpoint-row');
+      if (pinpointRow) {
+        window.pinpointFormModal.show(pinpointRow.dataset.pid, null, () => this._load());
         return;
       }
 
@@ -172,21 +236,21 @@ class PinpointsLibrary {
       await DB.categories.add(name, parentId);
       await this._load();
     } catch (err) {
-      alert('Could not add category: ' + err.message);
+      alert('Could not add folder: ' + err.message);
     }
   }
 
   async _deleteCategory(id, name, isEmpty) {
     if (!isEmpty) {
-      alert(`"${name}" still has pinpoints or subcategories inside it. Move or remove those first.`);
+      alert(`"${name}" still has pinpoints or subfolders inside it. Move or remove those first.`);
       return;
     }
-    if (!confirm(`Delete the empty category "${name}"?`)) return;
+    if (!confirm(`Delete the empty folder "${name}"? This cannot be undone.`)) return;
     try {
       await DB.categories.delete(id);
       await this._load();
     } catch (err) {
-      alert('Could not delete category: ' + err.message);
+      alert('Could not delete folder: ' + err.message);
     }
   }
 }

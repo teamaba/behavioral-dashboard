@@ -84,7 +84,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         badge.innerHTML = `
           <span class="topbar-user-email">${profile.email}</span>
           <span class="role-tag">${profile.role}</span>
-          ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="btn-pinpoints">Pinpoints Library</button>' : ''}
           ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="btn-overlay">Overlay Charts</button>' : ''}
           ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="btn-report">Export Report</button>' : ''}
           <button class="hv-manage-btn" id="btn-export-image">Export Image</button>
@@ -93,8 +92,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
         const inviteBtn = document.getElementById('btn-invite');
         if (inviteBtn) inviteBtn.addEventListener('click', () => window.inviteModal.show());
-        const pinpointsBtn = document.getElementById('btn-pinpoints');
-        if (pinpointsBtn) pinpointsBtn.addEventListener('click', () => window.pinpointsLibrary.show());
         const overlayBtn = document.getElementById('btn-overlay');
         if (overlayBtn) overlayBtn.addEventListener('click', () => window.overlayModal.show());
         const reportBtn = document.getElementById('btn-report');
@@ -116,7 +113,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       hvBadge.innerHTML = `
         <span class="hv-user-email">${profile.email}</span>
         <span class="role-tag">${profile.role}</span>
-        ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="hv-btn-pinpoints">Pinpoints Library</button>' : ''}
         ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="hv-btn-overlay">Overlay Charts</button>' : ''}
         ${DB.auth.isStaff() ? '<button class="hv-manage-btn" id="hv-btn-report">Export Report</button>' : ''}
         ${DB.auth.isSupervisor() ? '<button class="hv-manage-btn" id="hv-btn-invite">Manage users</button>' : ''}
@@ -128,8 +124,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       const hvInvite = document.getElementById('hv-btn-invite');
       if (hvInvite) hvInvite.addEventListener('click', () => window.inviteModal.show());
-      const hvPinpoints = document.getElementById('hv-btn-pinpoints');
-      if (hvPinpoints) hvPinpoints.addEventListener('click', () => window.pinpointsLibrary.show());
       const hvOverlay = document.getElementById('hv-btn-overlay');
       if (hvOverlay) hvOverlay.addEventListener('click', () => window.overlayModal.show());
       const hvReport = document.getElementById('hv-btn-report');
