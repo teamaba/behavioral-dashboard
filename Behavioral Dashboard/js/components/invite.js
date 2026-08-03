@@ -1,3 +1,5 @@
+const PROTECTED_OWNER_EMAIL = 'bdean@teamaballc.com';
+
 class InviteModal {
   constructor() {
     this.overlay = document.getElementById('invite-overlay');
@@ -65,7 +67,8 @@ class InviteModal {
         return;
       }
       listEl.innerHTML = profiles.map(p => {
-        const isSelf = p.id === me?.id;
+        const isSelf      = p.id === me?.id;
+        const isProtected = p.email === PROTECTED_OWNER_EMAIL;
         return `
           <div class="user-row">
             <div class="user-info">
@@ -75,6 +78,14 @@ class InviteModal {
             ${isSelf ? `
               <span class="role-tag">${p.role}</span>
               <span class="user-self">you</span>
+            ` : isProtected ? `
+              <select class="user-role-select" data-id="${p.id}">
+                <option value="client"      ${p.role === 'client'      ? 'selected' : ''}>Client</option>
+                <option value="guide"       ${p.role === 'guide'       ? 'selected' : ''}>Guide</option>
+                <option value="staff"       ${p.role === 'staff'       ? 'selected' : ''}>Staff</option>
+                <option value="supervisor"  ${p.role === 'supervisor'  ? 'selected' : ''}>Supervisor</option>
+              </select>
+              <span class="user-self" title="This account cannot be removed">protected</span>
             ` : `
               <select class="user-role-select" data-id="${p.id}">
                 <option value="client"      ${p.role === 'client'      ? 'selected' : ''}>Client</option>
